@@ -29,6 +29,9 @@ export default function ContactsTab() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSyncDialog, setShowSyncDialog] = useState(false);
+  const [showAddContactDialog, setShowAddContactDialog] = useState(false);
+  const [newContactPhone, setNewContactPhone] = useState("");
+  const [newContactName, setNewContactName] = useState("");
   
   const {
     contacts,
@@ -41,6 +44,8 @@ export default function ContactsTab() {
     updateContactNickname,
     deleteContact,
     clearSyncProgress,
+    addContactByPhone,
+    findUsersByPhone,
   } = useContacts();
 
   // Filter contacts based on search
@@ -67,6 +72,19 @@ export default function ContactsTab() {
     }
   };
 
+  const handleAddContact = async () => {
+    if (!newContactPhone.trim()) return;
+    
+    try {
+      await addContactByPhone(newContactPhone.trim(), newContactName.trim());
+      setNewContactPhone("");
+      setNewContactName("");
+      setShowAddContactDialog(false);
+    } catch (error) {
+      console.error('Error adding contact:', error);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -75,89 +93,142 @@ export default function ContactsTab() {
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
             Contatos
           </h2>
-          <Dialog open={showSyncDialog} onOpenChange={setShowSyncDialog}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Sincronizar
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Sincronizar Contatos</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Sincronize seus contatos para encontrar amigos que já usam o Talk World.
-                </p>
-                
-                {syncProgress && (
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Status:</span>
-                          <Badge variant={syncProgress.status === 'completed' ? 'default' : 'secondary'}>
-                            {syncProgress.status}
-                          </Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Contatos sincronizados:</span>
-                          <span>{syncProgress.syncedContacts}/{syncProgress.totalContacts}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Registrados no Talk World:</span>
-                          <span className="font-medium text-green-600">{syncProgress.registeredContacts}</span>
-                        </div>
-                        <Progress 
-                          value={(syncProgress.syncedContacts / syncProgress.totalContacts) * 100} 
-                          className="mt-2"
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <div className="flex space-x-2">
-                  <Button 
-                    onClick={syncDeviceContacts} 
-                    disabled={isSyncing}
-                    className="flex-1"
-                  >
-                    {isSyncing ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Smartphone className="h-4 w-4 mr-2" />
-                    )}
-                    Sincronizar do Dispositivo
-                  </Button>
-                  
-                  <Button 
-                    onClick={syncTestContacts} 
-                    disabled={isSyncing}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <Users className="h-4 w-4 mr-2" />
-                    Teste (Demo)
-                  </Button>
+          <div className="flex space-x-2">
+            <Dialog open={showAddContactDialog} onOpenChange={setShowAddContactDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Adicionar
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Adicionar Contato</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Nome (opcional)</label>
+                    <Input
+                      placeholder="Digite o nome do contato"
+                      value={newContactName}
+                      onChange={(e) => setNewContactName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Número de telefone *</label>
+                    <Input
+                      placeholder="+55 11 99999-9999"
+                      value={newContactPhone}
+                      onChange={(e) => setNewContactPhone(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button
+                      onClick={handleAddContact}
+                      disabled={!newContactPhone.trim()}
+                      className="flex-1"
+                    >
+                      Adicionar Contato
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowAddContactDialog(false);
+                        setNewContactPhone("");
+                        setNewContactName("");
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
+              </DialogContent>
+            </Dialog>
+            
+            <Dialog open={showSyncDialog} onOpenChange={setShowSyncDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Sincronizar
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Sincronizar Contatos</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Sincronize seus contatos para encontrar amigos que já usam o Talk World.
+                  </p>
+                  
+                  {syncProgress && (
+                    <Card>
+                      <CardContent className="p-4">
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span>Status:</span>
+                            <Badge variant={syncProgress.status === 'completed' ? 'default' : 'secondary'}>
+                              {syncProgress.status}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Contatos sincronizados:</span>
+                            <span>{syncProgress.syncedContacts}/{syncProgress.totalContacts}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Registrados no Talk World:</span>
+                            <span className="font-medium text-green-600">{syncProgress.registeredContacts}</span>
+                          </div>
+                          <Progress 
+                            value={(syncProgress.syncedContacts / syncProgress.totalContacts) * 100} 
+                            className="mt-2"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
-                {syncProgress && (
-                  <Button 
-                    onClick={() => {
-                      clearSyncProgress();
-                      setShowSyncDialog(false);
-                    }}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    Fechar
-                  </Button>
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
+                  <div className="flex space-x-2">
+                    <Button 
+                      onClick={syncDeviceContacts} 
+                      disabled={isSyncing}
+                      className="flex-1"
+                    >
+                      {isSyncing ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Smartphone className="h-4 w-4 mr-2" />
+                      )}
+                      Sincronizar do Dispositivo
+                    </Button>
+                    
+                    <Button 
+                      onClick={syncTestContacts} 
+                      disabled={isSyncing}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Teste (Demo)
+                    </Button>
+                  </div>
+
+                  {syncProgress && (
+                    <Button 
+                      onClick={() => {
+                        clearSyncProgress();
+                        setShowSyncDialog(false);
+                      }}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      Fechar
+                    </Button>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {/* Search */}
