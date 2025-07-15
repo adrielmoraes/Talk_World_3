@@ -1,0 +1,185 @@
+> rest-express@1.0.0 dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+[GroqTranslation] Service initialized
+[VoiceTranslation] Service initialized
+10:55:38 PM [express] serving on 0.0.0.0:5000
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+WebSocket connection established
+OTP for +5591992032826: 929167
+10:56:01 PM [express] POST /api/auth/send-otp 200 in 799ms :: {"message":"OTP sent successfully"}
+10:56:12 PM [express] POST /api/auth/verify-otp 200 in 663ms :: {"token":"eyJhbGciOiJIUzI1NiIsInR5cCI…
+10:56:13 PM [express] GET /api/conversations 304 in 113ms :: {"conversations":[]}
+WebSocket connection established
+10:56:15 PM [express] GET /api/contacts 200 in 106ms :: {"contacts":[{"id":14,"userId":1,"contactUser…
+10:56:15 PM [express] GET /api/contacts/sync-history 200 in 426ms :: {"history":[{"id":2,"userId":1,"…
+10:56:28 PM [express] POST /api/conversations 200 in 528ms :: {"conversation":{"id":1,"participant1Id…
+10:56:28 PM [express] GET /api/translation/languages 200 in 1ms :: {"languages":[{"code":"pt-BR","nam…
+10:56:28 PM [express] GET /api/conversations/1 200 in 102ms :: {"id":1,"translationEnabled":false,"cr…
+10:56:28 PM [express] PATCH /api/conversations/1/mark-read 200 in 105ms :: {"success":true}
+10:56:28 PM [express] GET /api/conversations/1/messages 200 in 418ms :: {"messages":[]}
+10:56:29 PM [express] GET /api/conversations/1 304 in 106ms :: {"id":1,"translationEnabled":false,"cr…
+WebSocket connection established
+Update translation error: TypeError: storage.updateConversationTranslation is not a function
+    at <anonymous> (/home/runner/workspace/server/routes.ts:434:42)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at authenticateToken (/home/runner/workspace/server/routes.ts:152:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/runner/workspace/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:284:15
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:365:14)
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:376:14)
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:421:3)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at <anonymous> (/home/runner/workspace/server/index.ts:50:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at urlencodedParser (/home/runner/workspace/node_modules/body-parser/lib/types/urlencoded.js:85:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at /home/runner/workspace/node_modules/body-parser/lib/read.js:137:5
+    at AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    at invokeCallback (/home/runner/workspace/node_modules/raw-body/index.js:238:16)
+    at done (/home/runner/workspace/node_modules/raw-body/index.js:227:7)
+    at IncomingMessage.onEnd (/home/runner/workspace/node_modules/raw-body/index.js:287:7)
+    at IncomingMessage.emit (node:events:518:28)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
+10:57:05 PM [express] PATCH /api/conversations/1/translation 500 in 9ms :: {"message":"Failed to upda…
+Update translation error: TypeError: storage.updateConversationTranslation is not a function
+    at <anonymous> (/home/runner/workspace/server/routes.ts:434:42)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at authenticateToken (/home/runner/workspace/server/routes.ts:152:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/runner/workspace/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:284:15
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:365:14)
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:376:14)
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:421:3)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at <anonymous> (/home/runner/workspace/server/index.ts:50:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at urlencodedParser (/home/runner/workspace/node_modules/body-parser/lib/types/urlencoded.js:85:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at /home/runner/workspace/node_modules/body-parser/lib/read.js:137:5
+    at AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    at invokeCallback (/home/runner/workspace/node_modules/raw-body/index.js:238:16)
+    at done (/home/runner/workspace/node_modules/raw-body/index.js:227:7)
+    at IncomingMessage.onEnd (/home/runner/workspace/node_modules/raw-body/index.js:287:7)
+    at IncomingMessage.emit (node:events:518:28)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
+10:57:07 PM [express] PATCH /api/conversations/1/translation 500 in 3ms :: {"message":"Failed to upda…
+OTP for +5591993905869: 423285
+10:58:05 PM [express] POST /api/auth/send-otp 200 in 2857ms :: {"message":"OTP sent successfully"}
+10:58:26 PM [express] POST /api/auth/verify-otp 200 in 2661ms :: {"token":"eyJhbGciOiJIUzI1NiIsInR5cC…
+10:58:26 PM [express] GET /api/conversations 200 in 119ms :: {"conversations":[{"id":1,"translationEn…
+WebSocket connection established
+10:58:30 PM [express] GET /api/translation/languages 200 in 0ms :: {"languages":[{"code":"pt-BR","nam…
+10:58:30 PM [express] GET /api/conversations/1 200 in 104ms :: {"id":1,"translationEnabled":false,"cr…
+10:58:30 PM [express] PATCH /api/conversations/1/mark-read 200 in 106ms :: {"success":true}
+10:58:31 PM [express] GET /api/conversations/1/messages 200 in 418ms :: {"messages":[]}
+10:58:31 PM [express] GET /api/conversations/1 304 in 105ms :: {"id":1,"translationEnabled":false,"cr…
+WebSocket connection established
+10:59:12 PM [express] GET /api/conversations 200 in 416ms :: {"conversations":[{"id":1,"translationEn…
+10:59:14 PM [express] GET /api/translation/languages 200 in 1ms :: {"languages":[{"code":"pt-BR","nam…
+10:59:15 PM [express] GET /api/conversations/1 200 in 103ms :: {"id":1,"translationEnabled":false,"cr…
+10:59:15 PM [express] GET /api/conversations/1/messages 200 in 102ms :: {"messages":[]}
+10:59:15 PM [express] PATCH /api/conversations/1/mark-read 200 in 422ms :: {"success":true}
+10:59:16 PM [express] GET /api/conversations/1 304 in 104ms :: {"id":1,"translationEnabled":false,"cr…
+10:59:16 PM [express] GET /api/conversations/1/messages 304 in 108ms :: {"messages":[]}
+WebSocket connection established
+Update translation error: TypeError: storage.updateConversationTranslation is not a function
+    at <anonymous> (/home/runner/workspace/server/routes.ts:434:42)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at authenticateToken (/home/runner/workspace/server/routes.ts:152:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/runner/workspace/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:284:15
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:365:14)
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:376:14)
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:421:3)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at <anonymous> (/home/runner/workspace/server/index.ts:50:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at urlencodedParser (/home/runner/workspace/node_modules/body-parser/lib/types/urlencoded.js:85:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at /home/runner/workspace/node_modules/body-parser/lib/read.js:137:5
+    at AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    at invokeCallback (/home/runner/workspace/node_modules/raw-body/index.js:238:16)
+    at done (/home/runner/workspace/node_modules/raw-body/index.js:227:7)
+    at IncomingMessage.onEnd (/home/runner/workspace/node_modules/raw-body/index.js:287:7)
+    at IncomingMessage.emit (node:events:518:28)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
+11:00:43 PM [express] PATCH /api/conversations/1/translation 500 in 1ms :: {"message":"Failed to upda…
+Update translation error: TypeError: storage.updateConversationTranslation is not a function
+    at <anonymous> (/home/runner/workspace/server/routes.ts:434:42)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at authenticateToken (/home/runner/workspace/server/routes.ts:152:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/runner/workspace/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/runner/workspace/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:284:15
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:365:14)
+    at param (/home/runner/workspace/node_modules/express/lib/router/index.js:376:14)
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:421:3)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at <anonymous> (/home/runner/workspace/server/index.ts:50:3)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at urlencodedParser (/home/runner/workspace/node_modules/body-parser/lib/types/urlencoded.js:85:7)
+    at Layer.handle [as handle_request] (/home/runner/workspace/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/runner/workspace/node_modules/express/lib/router/index.js:328:13)
+    at /home/runner/workspace/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/runner/workspace/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/runner/workspace/node_modules/express/lib/router/index.js:280:10)
+    at /home/runner/workspace/node_modules/body-parser/lib/read.js:137:5
+    at AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    at invokeCallback (/home/runner/workspace/node_modules/raw-body/index.js:238:16)
+    at done (/home/runner/workspace/node_modules/raw-body/index.js:227:7)
+    at IncomingMessage.onEnd (/home/runner/workspace/node_modules/raw-body/index.js:287:7)
+    at IncomingMessage.emit (node:events:518:28)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
+11:01:00 PM [express] PATCH /api/conversations/1/translation 500 in 2ms :: {"message":"Failed to upda…
+11:01:16 PM [express] POST /api/translation/translate 200 in 750ms :: {"translation":{"originalText":…
+11:01:33 PM [express] POST /api/translation/translate 200 in 720ms :: {"translation":{"originalText":…
