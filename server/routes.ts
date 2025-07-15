@@ -283,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add contact
+  // Add contact by phone number
   app.post('/api/contacts', authenticateToken, async (req, res) => {
     try {
       const { phoneNumber } = req.body;
@@ -305,6 +305,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ contact });
     } catch (error) {
       console.error('Add contact error:', error);
+      res.status(500).json({ message: 'Failed to add contact' });
+    }
+  });
+
+  // Add contact by user ID
+  app.post('/api/contacts/add-user', authenticateToken, async (req, res) => {
+    try {
+      const { contactUserId } = req.body;
+      
+      if (!contactUserId) {
+        return res.status(400).json({ message: 'Contact user ID is required' });
+      }
+
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const contact = await storage.addContact(req.userId, contactUserId);
+      res.json({ contact });
+    } catch (error) {
+      console.error('Add contact by user ID error:', error);
       res.status(500).json({ message: 'Failed to add contact' });
     }
   });

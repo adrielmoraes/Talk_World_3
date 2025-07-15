@@ -35,7 +35,7 @@ Funcionalidades principais:
     1.  Captura de áudio (chunk) do Falante A (Idioma A).
     2.  Envio do chunk para o Backend.
     3.  Backend: Transcrição via Whisper (Áudio A -> Texto A).
-    4.  Backend: Tradução via Deep-Translator (Texto A -> Texto B, usando Idioma B do Ouvinte).
+    4.  Backend: Tradução via Groq API (Texto A -> Texto B, usando Idioma B do Ouvinte).
     5.  Backend: Síntese de voz via Coqui-TTS (Texto B -> Áudio B) - se ativado.
     6.  Backend: Envio do Áudio B para o Ouvinte via WebSocket/DataChannel.
     7.  Frontend Ouvinte B: O Áudio e Reproduzido automaticamente .
@@ -90,7 +90,7 @@ Funcionalidades principais:
 **3.4 Processamento de Áudio e Tradução (Backend)**
 *   **Captura de Áudio:** Realizada no cliente (Frontend).
 *   **Transcrição (STT):** Whisper (modelo `base` ou `small` para balancear velocidade/precisão, considerar multilingue). Implementação no backend.
-*   **Tradução:** Deep-Translator.
+*   **Tradução:** Groq API.
 *   **Síntese de voz (TTS):** Coqui-TTS (modelo otimizado para baixa latência e naturalidade, ex: XTTS).
 
 **3.5 Comunicação em Tempo Real**
@@ -167,7 +167,7 @@ Disponíveis para o usuário na Tela de Configurações:
 *   **Banco de Dados:** PostgreSQL.
 *   **Cache/OTP Store PostgreSQL.
 *   **STT:** Whisper.
-*   **Tradução:** Deep-Translator.
+*   **Tradução:** Groq API.
 *   **TTS:** Coqui-TTS (ex: XTTS).
 *   **Comunicação SMS:** Twilio.
 
@@ -217,7 +217,7 @@ Disponíveis para o usuário na Tela de Configurações:
     *   Lógica de envio/recebimento de mensagens individuais (sem tradução).
     *   Integração com a UI de Chat (Lista de Chats, Tela de Chat Individual - bolhas).
 5.  **Fase 5: Tradução de Texto:**
-    *   Integração do Deep-Translator para tradução no Backend.
+    *   Integração do Groq API para tradução no Backend.
     *   Modificação do fluxo de mensagens para incluir tradução opcional.
     *   Atualização da UI do Chat para exibir/alternar original/traduzido e switch de ativação.
 6.  **Fase 6: Chamadas de Voz (Core):**
@@ -226,7 +226,7 @@ Disponíveis para o usuário na Tela de Configurações:
     *   Integração com a UI de Chamadas (Aba Chamadas, Tela Durante a Chamada - controles).
     *   Log de chamadas no Backend/DB.
 7.  **Fase 7: Tradução de Voz:**
-    *   Integração STT (Whisper) -> Tradução (Deep-Translator) -> TTS (Coqui-TTS) no Backend.
+    *   Integração STT (Whisper) -> Tradução (Groq API) -> TTS (Coqui-TTS) no Backend.
     *   Comunicação dos dados de tradução (áudio) via WebSocket/DataChannel.
     *   Atualização da UI Durante a Chamada controles de tradução.
 8.  **Fase 8: Segurança E2EE:**
@@ -253,7 +253,7 @@ TALK WORLD é um aplicativo de mensagens instantâneas e chamadas de voz projeta
 
 *   **Mensagens de Texto:** Chats individuais com tradução automática opcional.
 *   **Chamadas de Voz:** Chamadas individuais com tradução em tempo real ( áudio sintetizado).
-*   **Tradução:** (Whisper, Deep-Translator, Coqui-TTS) para STT, Tradução e TTS.
+*   **Tradução:** (Whisper, Groq API, Coqui-TTS) para STT, Tradução e TTS.
 *   **Segurança:** Criptografia ponta a ponta (E2EE) para mensagens e chamadas.
 *   **Autenticação:** Registro e login seguros via número de telefone e verificação OTP.
 *   **Interface:** Design familiar e intuitivo no estilo WhatsApp, com temas claro e escuro.
@@ -266,7 +266,7 @@ TALK WORLD é um aplicativo de mensagens instantâneas e chamadas de voz projeta
 *   **Backend:** Python (FastAPI)
 *   **Banco de Dados:** PostgreSQL
 *   **Tempo Real:** WebSockets, WebRTC
-*   **Tradução/Voz:** Whisper (STT), Deep-Translator (Tradução), Coqui-TTS (TTS).
+*   **Tradução/Voz:** Whisper (STT), Groq API (Tradução), Coqui-TTS (TTS).
 *   **Autenticação:** Verificação OTP via SMS (ex: Twilio), JWT
 
 

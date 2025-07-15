@@ -232,6 +232,36 @@ export function useContacts() {
     await syncContactsMutation.mutateAsync(testContacts);
   }, [syncContactsMutation]);
 
+  // Add contact by phone number
+  const addContactByPhone = useCallback(async (phoneNumber: string, name?: string) => {
+    try {
+      // First, try to find if the user exists
+      const users = await findUsersMutation.mutateAsync([phoneNumber]);
+      
+      if (users.users && users.users.length > 0) {
+        // User exists, add them as a contact
+        const user = users.users[0];
+        await addContactMutation.mutateAsync(user.id);
+        return user;
+      } else {
+        // User doesn't exist, create a manual contact entry
+        const deviceContacts: DeviceContact[] = [
+          { name: name || phoneNumber, phoneNumber }
+        ];
+        await syncContactsMutation.mutateAsync(deviceContacts);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error adding contact by phone:', error);
+      throw error;
+    }
+  }, [findUsersMutation, addContactMutation, syncContactsMutation]);
+
+  // Find users by phone numbers
+  const findUsersByPhone = useCallback(async (phoneNumbers: string[]) => {
+    return await findUsersMutation.mutateAsync(phoneNumbers);
+  }, [findUsersMutation]);
+
   return {
     // Data
     contacts: contactsData?.contacts || [],
@@ -253,6 +283,8 @@ export function useContacts() {
     updateContactNickname: updateNicknameMutation.mutateAsync,
     deleteContact: deleteContactMutation.mutateAsync,
     addContact: addContactMutation.mutateAsync,
+    addContactByPhone,
+    findUsersByPhone,
     refetchContacts,
     
     // Clear sync progress
