@@ -1,0 +1,435 @@
+import { 
+  users, 
+  otpCodes, 
+  contacts, 
+  contactSyncSessions,
+  conversations, 
+  messages, 
+  calls,
+  type User, 
+  type InsertUser, 
+  type OtpCode, 
+  type InsertOtpCode,
+  type Contact, 
+  type InsertContact,
+  type ContactSyncSession,
+  type InsertContactSyncSession,
+  type Conversation, 
+  type InsertConversation,
+  type Message, 
+  type InsertMessage,
+  type Call, 
+  type InsertCall
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, and, or, desc, inArray } from "drizzle-orm";
+
+// Storage interface
+interface IStorage {
+  // User methods
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByPhoneNumber(phoneNumber: string): Promise<User | undefined>;
+  createUser(insertUser: InsertUser): Promise<User>;
+  updateUser(id: number, updates: Partial<User>): Promise<User>;
+
+  // OTP methods
+  createOtpCode(insertOtp: InsertOtpCode): Promise<OtpCode>;
+  getValidOtpCode(phoneNumber: string, code: string): Promise<OtpCode | undefined>;
+  markOtpAsUsed(id: number): Promise<void>;
+
+  // Contact methods
+  getUserContacts(userId: number): Promise<any[]>;
+  addContact(userId: number, contactUserId: number): Promise<Contact>;
+  syncContacts(userId: number, contacts: Array<{name: string, phoneNumber: string}>): Promise<ContactSyncSession>;
+  findUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[]>;
+  updateContactNickname(contactId: number, nickname: string): Promise<Contact>;
+  deleteContact(contactId: number): Promise<void>;
+  getContactSyncHistory(userId: number): Promise<ContactSyncSession[]>;
+
+  // Conversation methods
+  getUserConversations(userId: number): Promise<any[]>;
+  getConversationById(id: number): Promise<Conversation | undefined>;
+  getConversationByParticipants(user1Id: number, user2Id: number): Promise<Conversation | undefined>;
+  createConversation(insertConversation: InsertConversation): Promise<Conversation>;
+  updateConversationTranslation(id: number, enabled: boolean): Promise<Conversation>;
+
+  // Message methods
+  createMessage(insertMessage: InsertMessage): Promise<Message>;
+  getConversationMessages(conversationId: number): Promise<any[]>;
+
+  // Call methods
+  getUserCalls(userId: number): Promise<any[]>;
+  createCall(insertCall: InsertCall): Promise<Call>;
+  updateCall(id: number, updates: Partial<Call>): Promise<Call>;
+}
+
+export class DatabaseStorage implements IStorage {
+  // User methods
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async getUserByPhoneNumber(phoneNumber: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.phoneNumber, phoneNumber));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: number, updates: Partial<User>): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  // OTP methods
+  async createOtpCode(insertOtp: InsertOtpCode): Promise<OtpCode> {
+    const [otp] = await db
+      .insert(otpCodes)
+      .values(insertOtp)
+      .returning();
+    return otp;
+  }
+
+  async getValidOtpCode(phoneNumber: string, code: string): Promise<OtpCode | undefined> {
+    const [otp] = await db
+      .select()
+      .from(otpCodes)
+      .where(
+        and(
+          eq(otpCodes.phoneNumber, phoneNumber),
+          eq(otpCodes.code, code),
+          eq(otpCodes.isUsed, false)
+        )
+      );
+    
+    if (otp && new Date() < otp.expiresAt) {
+      return otp;
+    }
+    return undefined;
+  }
+
+  async markOtpAsUsed(id: number): Promise<void> {
+    await db
+      .update(otpCodes)
+      .set({ isUsed: true })
+      .where(eq(otpCodes.id, id));
+  }
+
+  // Contact methods
+  async getUserContacts(userId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        id: contacts.id,
+        nickname: contacts.nickname,
+        contactUser: {
+          id: users.id,
+          username: users.username,
+          phoneNumber: users.phoneNumber,
+          preferredLanguage: users.preferredLanguage,
+          profilePhoto: users.profilePhoto,
+        }
+      })
+      .from(contacts)
+      .innerJoin(users, eq(contacts.contactUserId, users.id))
+      .where(eq(contacts.userId, userId));
+    
+    return result;
+  }
+
+  async addContact(userId: number, contactUserId: number): Promise<Contact> {
+    const [contact] = await db
+      .insert(contacts)
+      .values({ userId, contactUserId })
+      .returning();
+    return contact;
+  }
+
+  async syncContacts(userId: number, deviceContacts: Array<{name: string, phoneNumber: string}>): Promise<ContactSyncSession> {
+    // Start sync session
+    const [syncSession] = await db
+      .insert(contactSyncSessions)
+      .values({
+        userId,
+        totalContacts: deviceContacts.length,
+        syncedContacts: 0,
+        registeredContacts: 0,
+        status: "in_progress"
+      })
+      .returning();
+
+    let syncedCount = 0;
+    let registeredCount = 0;
+
+    try {
+      // Find registered users by phone numbers
+      const phoneNumbers = deviceContacts.map(c => c.phoneNumber);
+      const registeredUsers = await this.findUsersByPhoneNumbers(phoneNumbers);
+      const registeredPhoneMap = new Map(registeredUsers.map(u => [u.phoneNumber, u]));
+
+      // Process each contact
+      for (const deviceContact of deviceContacts) {
+        const registeredUser = registeredPhoneMap.get(deviceContact.phoneNumber);
+        const isRegistered = !!registeredUser;
+        
+        if (isRegistered) {
+          registeredCount++;
+        }
+
+        // Insert or update contact
+        try {
+          await db
+            .insert(contacts)
+            .values({
+              userId,
+              contactUserId: registeredUser?.id || null,
+              contactName: deviceContact.name,
+              phoneNumber: deviceContact.phoneNumber,
+              isRegistered,
+            });
+        } catch (error) {
+          // Handle duplicate contacts by updating existing ones
+          await db
+            .update(contacts)
+            .set({
+              contactName: deviceContact.name,
+              contactUserId: registeredUser?.id || null,
+              isRegistered,
+              syncedAt: new Date(),
+            })
+            .where(and(
+              eq(contacts.userId, userId),
+              eq(contacts.phoneNumber, deviceContact.phoneNumber)
+            ));
+        }
+
+        syncedCount++;
+      }
+
+      // Update sync session
+      const [completedSession] = await db
+        .update(contactSyncSessions)
+        .set({
+          syncedContacts: syncedCount,
+          registeredContacts: registeredCount,
+          status: "completed",
+          completedAt: new Date(),
+        })
+        .where(eq(contactSyncSessions.id, syncSession.id))
+        .returning();
+
+      return completedSession;
+
+    } catch (error) {
+      // Mark session as failed
+      await db
+        .update(contactSyncSessions)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+        })
+        .where(eq(contactSyncSessions.id, syncSession.id));
+      
+      throw error;
+    }
+  }
+
+  async findUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[]> {
+    if (phoneNumbers.length === 0) return [];
+    
+    return await db
+      .select()
+      .from(users)
+      .where(inArray(users.phoneNumber, phoneNumbers));
+  }
+
+  async updateContactNickname(contactId: number, nickname: string): Promise<Contact> {
+    const [contact] = await db
+      .update(contacts)
+      .set({ nickname })
+      .where(eq(contacts.id, contactId))
+      .returning();
+    return contact;
+  }
+
+  async deleteContact(contactId: number): Promise<void> {
+    await db
+      .delete(contacts)
+      .where(eq(contacts.id, contactId));
+  }
+
+  async getContactSyncHistory(userId: number): Promise<ContactSyncSession[]> {
+    return await db
+      .select()
+      .from(contactSyncSessions)
+      .where(eq(contactSyncSessions.userId, userId))
+      .orderBy(desc(contactSyncSessions.startedAt));
+  }
+
+  // Conversation methods
+  async getUserConversations(userId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        id: conversations.id,
+        translationEnabled: conversations.translationEnabled,
+        updatedAt: conversations.updatedAt,
+        otherUser: {
+          id: users.id,
+          username: users.username,
+          profilePhoto: users.profilePhoto,
+        }
+      })
+      .from(conversations)
+      .innerJoin(
+        users, 
+        or(
+          and(eq(conversations.participant1Id, userId), eq(users.id, conversations.participant2Id)),
+          and(eq(conversations.participant2Id, userId), eq(users.id, conversations.participant1Id))
+        )
+      )
+      .where(
+        or(
+          eq(conversations.participant1Id, userId),
+          eq(conversations.participant2Id, userId)
+        )
+      )
+      .orderBy(desc(conversations.updatedAt));
+    
+    return result;
+  }
+
+  async getConversationById(id: number): Promise<Conversation | undefined> {
+    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, id));
+    return conversation || undefined;
+  }
+
+  async getConversationByParticipants(user1Id: number, user2Id: number): Promise<Conversation | undefined> {
+    const [conversation] = await db
+      .select()
+      .from(conversations)
+      .where(
+        or(
+          and(eq(conversations.participant1Id, user1Id), eq(conversations.participant2Id, user2Id)),
+          and(eq(conversations.participant1Id, user2Id), eq(conversations.participant2Id, user1Id))
+        )
+      );
+    return conversation || undefined;
+  }
+
+  async createConversation(insertConversation: InsertConversation): Promise<Conversation> {
+    const [conversation] = await db
+      .insert(conversations)
+      .values(insertConversation)
+      .returning();
+    return conversation;
+  }
+
+  async updateConversationTranslation(id: number, enabled: boolean): Promise<Conversation> {
+    const [conversation] = await db
+      .update(conversations)
+      .set({ translationEnabled: enabled })
+      .where(eq(conversations.id, id))
+      .returning();
+    return conversation;
+  }
+
+  // Message methods
+  async createMessage(insertMessage: InsertMessage): Promise<Message> {
+    const [message] = await db
+      .insert(messages)
+      .values(insertMessage)
+      .returning();
+    return message;
+  }
+
+  async getConversationMessages(conversationId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        id: messages.id,
+        conversationId: messages.conversationId,
+        senderId: messages.senderId,
+        originalText: messages.originalText,
+        translatedText: messages.translatedText,
+        targetLanguage: messages.targetLanguage,
+        isDelivered: messages.isDelivered,
+        isRead: messages.isRead,
+        createdAt: messages.createdAt,
+        sender: {
+          id: users.id,
+          username: users.username,
+        }
+      })
+      .from(messages)
+      .innerJoin(users, eq(messages.senderId, users.id))
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(messages.createdAt);
+    
+    return result;
+  }
+
+  // Call methods
+  async getUserCalls(userId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        id: calls.id,
+        callerId: calls.callerId,
+        receiverId: calls.receiverId,
+        status: calls.status,
+        duration: calls.duration,
+        translationEnabled: calls.translationEnabled,
+        startedAt: calls.startedAt,
+        endedAt: calls.endedAt,
+        caller: {
+          id: users.id,
+          username: users.username,
+          profilePhoto: users.profilePhoto,
+        }
+      })
+      .from(calls)
+      .innerJoin(users, eq(calls.callerId, users.id))
+      .where(
+        or(
+          eq(calls.callerId, userId),
+          eq(calls.receiverId, userId)
+        )
+      )
+      .orderBy(desc(calls.startedAt));
+    
+    return result;
+  }
+
+  async createCall(insertCall: InsertCall): Promise<Call> {
+    const [call] = await db
+      .insert(calls)
+      .values(insertCall)
+      .returning();
+    return call;
+  }
+
+  async updateCall(id: number, updates: Partial<Call>): Promise<Call> {
+    const [call] = await db
+      .update(calls)
+      .set(updates)
+      .where(eq(calls.id, id))
+      .returning();
+    return call;
+  }
+}
+
+export const storage = new DatabaseStorage();

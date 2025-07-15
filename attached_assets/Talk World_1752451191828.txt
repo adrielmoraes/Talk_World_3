@@ -1,0 +1,284 @@
+
+---
+
+**1. Introdução**
+
+**1.1 Objetivo**
+Desenvolver o Talk World, um aplicativo de mensagens instantâneas e chamadas de voz que integra tradução automática em tempo real para usuários de diferentes idiomas, garantindo comunicação fluida, segura, global e com uma interface de usuário familiar e intuitiva.
+
+**1.2 Escopo**
+O aplicativo será multiplataforma (Android, iOS) Uma versão Web.
+Funcionalidades principais:
+*   Cadastro e Login via número de telefone com verificação OTP.
+*   Configuração inicial de perfil ( User-name, Idioma, Sexo: Foto de Perfil,).
+*   Interface de usuário e navegação inspiradas no WhatsApp (detalhada na Seção 4).
+*   Mensagens de texto individuais com tradução automática (online/visto por último).
+*   Chamadas de voz individuais com transcrição e tradução em tempo real (Voz).
+*   Histórico de mensagens e chamadas.
+*   Sincronização de contatos da agenda (com permissão do usuário).
+*   Configurações de conta, privacidade, conversas, chamadas, notificações e dados.
+*   Criptografia ponta a ponta (E2EE) para mensagens e chamadas (com ressalva para tradução no servidor).
+
+**2. Funcionalidades Principais**
+
+**2.1 Mensagens de Texto com Tradução Instantânea**
+*   Tradução automática das mensagens enviadas para o idioma preferido do contato destinatário, quando ativada.
+*   Visualização da mensagem na bolha de chat, com opção de ver o texto original e o traduzido (configurável).
+*   Switch por conversa para ativar/desativar a tradução automática.
+*   Indicador visual claro quando a tradução está ativa para uma conversa.
+
+**2.2 Chamadas de Voz com Tradução em Tempo Real**
+*   Chamadas de voz individuais sobre IP (VoIP) usando WebRTC.
+*   Quando ativa, a fala é capturada em tempo real, transcrita (STT), traduzida, e sintetizada (TTS) no idioma do destinatário.
+
+*   *Fluxo Técnico Detalhado:*
+    1.  Captura de áudio (chunk) do Falante A (Idioma A).
+    2.  Envio do chunk para o Backend.
+    3.  Backend: Transcrição via Whisper (Áudio A -> Texto A).
+    4.  Backend: Tradução via Deep-Translator (Texto A -> Texto B, usando Idioma B do Ouvinte).
+    5.  Backend: Síntese de voz via Coqui-TTS (Texto B -> Áudio B) - se ativado.
+    6.  Backend: Envio do Áudio B para o Ouvinte via WebSocket/DataChannel.
+    7.  Frontend Ouvinte B: O Áudio e Reproduzido automaticamente .
+   
+
+**2.3 Histórico de Comunicações**
+*   Aba "Chats": Lista consolidada de todas as conversas individuais, ordenadas pela mensagem mais recente. Exibe nome do contato, avatar, prévia da última mensagem e timestamp. Badge para mensagens não lidas.
+*   Aba "Chamadas": Histórico consolidado de todas as chamadas de voz (feitas, recebidas, perdidas), com nome do contato, avatar, timestamp e status da chamada.
+
+**2.4 Gerenciamento de Usuários (Autenticação por Telefone)**
+*   **Cadastro/Login:** Entrada do número de telefone com seletor do codigo do país. Verificação via código OTP de 6 dígitos enviado por SMS.
+*   **Sessão:** Após verificação OTP bem-sucedida, um token JWT seguro é emitido e armazenado no dispositivo para manter o usuário logado.
+*   **Configuração Inicial do Perfil:** Na primeira vez após a verificação, o usuário fornece @Username de Exibição (obrigatório), Idioma Preferido (pode ser pré-selecionado) Obs. O idioama selecionado pelo usuario será o indioma da plataforma, Foto de Perfil, Seleção de sexo do usuario, Obs: Quando o usuario escolher o sexo no serviço de TTS o voz a ser usada sera de acordo com o sexo escolhido, se for masculino a voz do TTS sera masculina, se for feminino o voz do TTS sera feminina.
+*   **Importação de Contatos:** Solicita permissão para acessar a agenda do telefone. Compara números da agenda com a base de usuários do Talk World para exibir contatos conhecidos no app.
+*   **Descoberta:** Encontrar outros usuários primariamente através dos contatos sincronizados.
+
+**2.5 Segurança (E2EE com ressalva)**
+*   Criptografia ponta a ponta (E2EE), baseada no Signal Protocol, para mensagens e chamadas de voz padrão (sem tradução ativa).
+*   **Tradução e E2EE:** Para que a tradução ocorra no servidor, o conteúdo (texto ou áudio transcrito) precisa ser descriptografado temporariamente no backend, traduzido e então re-criptografado usando a chave da sessão segura com o destinatário. Este processo será claramente comunicado na Política de Privacidade.
+*   Proteção contra interceptação de dados via HTTPS/WSS para toda comunicação com o servidor.
+
+---
+
+**3. Requisitos Técnicos**
+
+**3.1 Frontend**
+*   Aplicativo móvel em React Native para Android e iOS e Web.
+*   Interface de usuário seguindo as diretrizes da Seção 5 (Estilo WhatsApp).
+*   Biblioteca de componentes UI (ex: React Native Paper).
+*   Gerenciamento de estado (ex: Redux Toolkit, Zustand).
+*   Navegação (ex: React Navigation).
+*   Cliente HTTP (ex: Axios).
+*   Cliente WebSocket.
+*   Biblioteca WebRTC (`react-native-webrtc`).
+*   Suporte a temas Claro/Escuro.
+*   Internacionalização (i18n) para a interface do app.
+
+**3.2 Backend**
+*   Desenvolvido em Python com FastAPI.
+*   API RESTful para operações CRUD e autenticação.
+*   Servidor WebSocket para mensagens em tempo real e sinalização WebRTC.
+*   ORM: SQLAlchemy com Alembic para migrações.
+*   Autenticação baseada em JWT.
+*   Integração com serviço de SMS (Twilio) para envio de OTP.
+*   Armazenamento temporário para OTPs (ex: PostgresSQL com TTL).
+*   Servidores STUN/TURN configurados para NAT traversal em WebRTC.
+
+**3.3 Banco de Dados**
+*   Banco de dados relacional: PostgreSQL.
+*   Estrutura principal (Tabelas: `usuarios`, `contatos`, `conversas`, `participantes_conversa`, `mensagens` ,`configurações de perfil` , `chamadas` Etc...).
+
+**3.4 Processamento de Áudio e Tradução (Backend)**
+*   **Captura de Áudio:** Realizada no cliente (Frontend).
+*   **Transcrição (STT):** Whisper (modelo `base` ou `small` para balancear velocidade/precisão, considerar multilingue). Implementação no backend.
+*   **Tradução:** Deep-Translator.
+*   **Síntese de voz (TTS):** Coqui-TTS (modelo otimizado para baixa latência e naturalidade, ex: XTTS).
+
+**3.5 Comunicação em Tempo Real**
+*   Mensagens de Texto: WebSocket.
+*   Sinalização WebRTC: WebSocket.
+*   Chamadas de Voz (Áudio P2P): WebRTC (DTLS-SRTP).
+*   Transferência de dados de tradução (áudio) durante chamada: WebSocket ou WebRTC Data Channels.
+
+---
+
+**4. Interface e Experiência do Usuário (UI/UX) - Estilo WhatsApp**
+
+**4.1 Objetivo:** Criar uma interface familiar, intuitiva e limpa, inspirada nos padrões visuais e de navegação do WhatsApp. Implementada para temas claro e escuro.
+
+**4.2 Princípios Gerais:**
+*   **Navegação Principal:** Abas na parte inferior (iOS, Android) contendo [Chats], [Chamadas], [Contatos], [Configurações].
+*   **Cores:** Paletas distintas para tema claro e escuro. Cor de destaque (verde) para elementos interativos.
+*   **Tipografia:** Fonte sans-serif limpa e legível (padrão do sistema). Hierarquia clara.
+*   **Ícones:** Conjunto consistente e moderno (ex: Material Icons).
+*   **Feedback:** Respostas visuais (ripple effect), indicadores de carregamento, snackbars para mensagens.
+
+**4.3 Telas Detalhadas:**
+*   **4.3.1 Tela de Boas-Vindas / Entrada de Número:** Logo, descrição breve, campo para número (com seletor de país com código do país e Bandeira),uma Botão para concordar com os termos de privacidades do aplicativo, botão "Avançar", links legais.
+*   **4.3.2 Tela de Verificação de OTP:** Instrução clara, campos para 6 dígitos separados com (auto-avanço), opção "Reenviar Código" (com timer), opção "Alterar Número".
+*   **4.3.3 Tela de Configuração Inicial do Perfil (1ª Vez):** Campos para `@Username`, selecionar o sexo do usuario, botão para Foto de Perfil, seleção de Idioma Preferido, botão "Concluir".
+*   **4.3.4 Tela Principal (Chats):** AppBar (Título, Pesquisa, Menu), Lista de Chats (Avatar, Nome, Prévia msg, Timestamp, Badge não lido), FAB (Nova Conversa).
+*   **4.3.5 Tela de Contatos:** AppBar (Título, Pesquisa), Opções, Adicionar novo contato, Lista de Contatos Talk World (Avatar, @Username), Seção "Convidar Amigos".
+*   **4.3.6 Tela de Chat Individual:** AppBar (Voltar, Avatar, Nome, Status Online/Visto, Ícone Chamada Voz, Menu), Área de Mensagens (Wallpaper, Bolhas D/E com cores distintas, conteúdo original/traduzido opcional, timestamp/status entrega), Barra de Input (Texto, Emoji, Enviar), Switch de Tradução (proeminente, por conversa).
+*   **4.3.7 Tela de Chamadas (Aba):** AppBar (Título, Pesquisa, Menu), Lista de Chamadas Recentes (Avatar, Nome, Status chamada, Timestamp, Ícone Info, Ícone Ligar), FAB (Nova Chamada).
+*   **4.3.8 Tela Durante a Chamada:** Fundo (blur/padrão), Avatar/@Usernome Contato, Status Chamada ("Chamando", "Conectado HH:MM:SS", "Tradução Ativa"), Botões de Controle (Mudo, Viva-voz, Encerrar, Ligar/Desligar).
+*   **4.3.9 Tela de Configurações (Aba):** AppBar (Título), Seção Perfil (Avatar, @username, Telefone, ), Lista de Opções (Conta, Conversas e Tradução, Chamadas, Notificações, Armazenamento e Dados, Ajuda).
+
+---
+
+**5. Configurações**
+
+Disponíveis para o usuário na Tela de Configurações:
+**5.1 Conta:**
+*   Editar Perfil (Foto, `@username`).
+*   Privacidade (Visto por último, Foto de perfil, Nome - quem pode ver).
+*   Segurança (Sessões Ativas, Verificação E2EE).
+*   Alterar Número (requer novo fluxo de verificação OTP).
+*   Excluir Conta.
+**5.2 Conversas e Tradução:**
+*   Tema (Claro/Escuro/Sistema).
+*   Tamanho da Fonte.
+*   Tradução Padrão (Ativada/Desativada globalmente).
+*   Modo de Visualização Padrão (Mostrar Original e Traduzido / Só Traduzido).
+**5.3 Chamadas:**
+*   Tradução de Chamadas Padrão (Ativada/Desativada globalmente).
+*   Modo de Tradução Padrão ( Áudio).
+**5.4 Notificações:**
+*   Configurações de som e vibração para mensagens e chamadas (pode direcionar para configurações do sistema).
+**5.5 Armazenamento e Dados:**
+*   Estatísticas de uso de rede (Mensagens, Chamadas).
+*   Gerenciamento de armazenamento local.
+
+---
+
+**6. Segurança e Privacidade**
+
+*   **Autenticação:** Verificação segura via OTP SMS. Limitação de taxa (rate limiting) para solicitações de OTP. Códigos OTP com tempo de expiração curto. Armazenamento seguro de tokens JWT no cliente.
+*   **Comunicação:** Criptografia TLS/SSL (HTTPS/WSS) para toda a comunicação entre cliente e servidor.
+*   **Mensagens e Chamadas:** Criptografia ponta a ponta (E2EE) usando o Signal Protocol habilitada por padrão para comunicações diretas.
+*   **Tradução:** O processo de tradução requer descriptografia temporária no servidor. Este ponto será explicitado na Política de Privacidade. O servidor não armazena o conteúdo descriptografado após o processamento.
+*   **Privacidade de Dados:** Conformidade com GDPR e outras regulamentações relevantes. Política de privacidade clara e acessível. Coleta mínima de dados necessários para o funcionamento do serviço. Controle do usuário sobre dados de perfil e visibilidade (privacidade).
+
+---
+
+**7. Tecnologias Utilizadas (Consolidado)**
+
+*   **Frontend:** React Native, React Navigation, React Native Paper (ou similar), Axios, `react-native-webrtc`, Biblioteca i18n.
+*   **Backend:** Python 3.x, FastAPI, Uvicorn, SQLAlchemy, Alembic, Pydantic, PyJWT, `python-multipart` (para uploads futuros), Biblioteca WebSocket (nativa do FastAPI).
+*   **Banco de Dados:** PostgreSQL.
+*   **Cache/OTP Store PostgreSQL.
+*   **STT:** Whisper.
+*   **Tradução:** Deep-Translator.
+*   **TTS:** Coqui-TTS (ex: XTTS).
+*   **Comunicação SMS:** Twilio.
+
+**8. Fluxograma de Navegação (Textual)**
+
+1.  **Usuário Novo:**
+    *   [Tela Boas Vindas/Entrada Número] -> Insere Número -> [Tela Verificação OTP] -> Recebe SMS -> Insere OTP correto -> [Tela Config Perfil Inicial] -> Preenche User/Idioma -> [Tela Principal (Aba Chats)]
+2.  **Usuário Existente (App Aberto):**
+    *   Abre App -> [Tela Principal (Aba Chats)] (Sessão ativa via token JWT)
+3.  **Navegação Principal (Abas):**
+    *   [Chats] <-> [Chamadas] <-> [Contatos] <-> [Configurações]
+4.  **Fluxo de Chat:**
+    *   [Aba Chats] -> Toca em FAB "Nova Conversa" OU Toca em conversa existente.
+    *   (Nova Conversa) -> [Tela Contatos] -> Seleciona Contato -> [Tela Chat Individual]
+    *   (Chat Existente) -> [Tela Chat Individual] -> Envia/Recebe Mensagens (com ou sem tradução) -> Toca em Ícone de Chamada -> [Tela Durante a Chamada]
+5.  **Fluxo de Chamada:**
+    *   [Aba Chamadas] -> Toca em FAB "Nova Chamada" OU Toca em entrada do histórico.
+    *   (Nova Chamada) -> [Tela Contatos] -> Seleciona Contato -> Inicia Chamada -> [Tela Durante a Chamada]
+    *   (Chamada do Histórico) -> Toca no ícone de telefone -> Inicia Chamada -> [Tela Durante a Chamada]
+    *   (Recebendo Chamada) -> Notificação/Tela de Chamada Recebida -> Aceita -> [Tela Durante a Chamada]
+6.  **Fluxo de Configuração:**
+    *   [Qualquer Aba Principal] -> Toca em [Aba Configurações] -> Navega pelas opções da lista.
+
+
+---
+
+
+
+**9. Roadmap de Desenvolvimento (Alto Nível)**
+
+1.  **Fase 1: Fundação Backend & Autenticação OTP:**
+    *   Setup FastAPI, PostgreSQL (com modelos DB), SQLAlchemy/Alembic.
+    *   Integração serviço SMS.
+    *   Implementação completa do fluxo de autenticação OTP (request/verify).
+    *   Geração/Validação JWT.
+2.  **Fase 2: Fundação Frontend & UI Base:**
+    *   Setup React Native, Navegação por Abas.
+    *   Implementação das telas de autenticação OTP (Entrada Num, Verificação, Perfil Inicial).
+    *   Implementação da estrutura visual principal (Abas, AppBar, FABs) no estilo WhatsApp.
+    *   Implementação das telas estáticas principais (Chats, Chamadas, Contatos, Configurações).
+3.  **Fase 3: Gerenciamento de Contatos:**
+    *   Permissão e sincronização da agenda.
+    *   API Backend para encontrar usuários por número.
+    *   Exibição de contatos na Aba Contatos.
+4.  **Fase 4: Mensagens de Texto (Core):**
+    *   Implementação WebSocket (Backend e Frontend).
+    *   Lógica de envio/recebimento de mensagens individuais (sem tradução).
+    *   Integração com a UI de Chat (Lista de Chats, Tela de Chat Individual - bolhas).
+5.  **Fase 5: Tradução de Texto:**
+    *   Integração do Deep-Translator para tradução no Backend.
+    *   Modificação do fluxo de mensagens para incluir tradução opcional.
+    *   Atualização da UI do Chat para exibir/alternar original/traduzido e switch de ativação.
+6.  **Fase 6: Chamadas de Voz (Core):**
+    *   Implementação WebRTC para chamadas 1-para-1 (sem tradução).
+    *   Sinalização via WebSocket.
+    *   Integração com a UI de Chamadas (Aba Chamadas, Tela Durante a Chamada - controles).
+    *   Log de chamadas no Backend/DB.
+7.  **Fase 7: Tradução de Voz:**
+    *   Integração STT (Whisper) -> Tradução (Deep-Translator) -> TTS (Coqui-TTS) no Backend.
+    *   Comunicação dos dados de tradução (áudio) via WebSocket/DataChannel.
+    *   Atualização da UI Durante a Chamada controles de tradução.
+8.  **Fase 8: Segurança E2EE:**
+    *   Implementação do Signal Protocol para mensagens e chamadas.
+    *   Gerenciamento de chaves.
+    *   Adaptação do fluxo de tradução para o modelo E2EE (com descriptografia no servidor).
+9.  **Fase 9: Configurações e Polimento:**
+    *   Implementação funcional de todas as opções da tela de Configurações.
+    *   Refinamento geral da UI/UX com base em feedback.
+    *   Otimizações de performance.
+
+---
+
+**10. Modelo de README.md**
+
+```markdown
+# TALK WORLD
+
+## Sobre
+
+TALK WORLD é um aplicativo de mensagens instantâneas e chamadas de voz projetado para quebrar barreiras linguísticas. Ele oferece tradução automática em tempo real para conversas de texto e voz, permitindo uma comunicação fluida entre pessoas de diferentes idiomas, com uma interface inspirada nos aplicativos de mensagens mais populares.
+
+## Funcionalidades 
+
+*   **Mensagens de Texto:** Chats individuais com tradução automática opcional.
+*   **Chamadas de Voz:** Chamadas individuais com tradução em tempo real ( áudio sintetizado).
+*   **Tradução:** (Whisper, Deep-Translator, Coqui-TTS) para STT, Tradução e TTS.
+*   **Segurança:** Criptografia ponta a ponta (E2EE) para mensagens e chamadas.
+*   **Autenticação:** Registro e login seguros via número de telefone e verificação OTP.
+*   **Interface:** Design familiar e intuitivo no estilo WhatsApp, com temas claro e escuro.
+*   **Contatos:** Sincronização com a agenda do telefone (requer permissão).
+*   **Histórico:** Logs de conversas e chamadas.
+
+## Tecnologias Principais
+
+*   **Frontend:** React Native
+*   **Backend:** Python (FastAPI)
+*   **Banco de Dados:** PostgreSQL
+*   **Tempo Real:** WebSockets, WebRTC
+*   **Tradução/Voz:** Whisper (STT), Deep-Translator (Tradução), Coqui-TTS (TTS).
+*   **Autenticação:** Verificação OTP via SMS (ex: Twilio), JWT
+
+
+## Roadmap
+
+1.  Backend + Autenticação OTP
+2.  Frontend UI Base + Telas de Autenticação
+3.  Sincronização de Contatos
+4.  Mensagens de Texto (Core) + UI Chat
+5.  Integração Tradução de Texto
+6.  Chamadas de Voz (Core) + UI Chamadas
+7.  Integração Tradução de Voz (STT->Translate->TTS) + Legendas
+8.  Implementação E2EE
+9.  Funcionalidades de Configurações + Polimento UI/UX
+
