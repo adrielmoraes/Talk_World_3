@@ -2,24 +2,28 @@ import {
   users, 
   otpCodes, 
   contacts, 
-  contactSyncSessions,
   conversations, 
   messages, 
-  calls,
-  type User, 
-  type InsertUser, 
-  type OtpCode, 
-  type InsertOtpCode,
-  type Contact, 
-  type InsertContact,
-  type ContactSyncSession,
-  type InsertContactSyncSession,
-  type Conversation, 
-  type InsertConversation,
-  type Message, 
-  type InsertMessage,
-  type Call, 
-  type InsertCall
+  calls, 
+  contactSyncHistory,
+  notificationSettings,
+  userStorageData,
+  type User,
+  type OtpCode,
+  type Contact,
+  type Conversation,
+  type Message,
+  type Call,
+  type ContactSyncHistory,
+  insertUserSchema,
+  insertOtpSchema,
+  insertContactSchema,
+  insertConversationSchema,
+  insertMessageSchema,
+  insertCallSchema,
+  insertContactSyncHistorySchema,
+  insertNotificationSettingsSchema,
+  insertUserStorageDataSchema,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, inArray, ne } from "drizzle-orm";
@@ -62,6 +66,14 @@ interface IStorage {
   getUserCalls(userId: number): Promise<any[]>;
   createCall(insertCall: InsertCall): Promise<Call>;
   updateCall(id: number, updates: Partial<Call>): Promise<Call>;
+
+  // Settings methods
+  getUserNotificationSettings(userId: number): Promise<any>;
+  updateNotificationSettings(userId: number, settings: Partial<any>): Promise<any>;
+  getUserStorageData(userId: number): Promise<any>;
+  updateUserStorageData(userId: number, data: Partial<any>): Promise<any>;
+  clearUserCache(userId: number): Promise<void>;
+  deleteAllUserData(userId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -386,22 +398,94 @@ export class DatabaseStorage implements IStorage {
     await db
       .update(messages)
       .set({ isRead: true })
-      .where(
-        and(
-          eq(messages.conversationId, conversationId),
-          ne(messages.senderId, userId),
-          eq(messages.isRead, false)
-        )
-      );
+      .where(and(
+        eq(messages.conversationId, conversationId),
+        ne(messages.senderId, userId),
+        eq(messages.isRead, false)
+      ));
   }
 
-  async updateConversationTranslation(id: number, enabled: boolean): Promise<Conversation> {
-    const [conversation] = await db
-      .update(conversations)
-      .set({ translationEnabled: enabled })
-      .where(eq(conversations.id, id))
-      .returning();
-    return conversation;
+  // Notification Settings
+  async getUserNotificationSettings(userId: number) {
+    const settings = await db.select()
+      .from(notificationSettings)
+      .where(eq(notificationSettings.userId, userId))
+      .limit(1);
+
+    if (settings.length === 0) {
+      // Create default settings if none exist
+      const defaultSettings = await db.insert(notificationSettings)
+        .values({ userId })
+        .returning();
+      return defaultSettings[0];
+    }
+
+    return settings[0];
+  }
+
+  async updateNotificationSettings(userId: number, settings: Partial<typeof notificationSettings.$inferInsert>) {
+    await db.update(notificationSettings)
+      .set({ ...settings, updatedAt: new Date() })
+      .where(eq(notificationSettings.userId, userId));
+
+    return this.getUserNotificationSettings(userId);
+  }
+
+  // User Storage Data
+  async getUserStorageData(userId: number) {
+    const storage = await db.select()
+      .from(userStorageData)
+      .where(eq(userStorageData.userId, userId))
+      .limit(1);
+
+    if (storage.length === 0) {
+      // Create default storage data if none exist
+      const defaultStorage = await db.insert(userStorageData)
+        .values({ userId })
+        .returning();
+      return defaultStorage[0];
+    }
+
+    return storage[0];
+  }
+
+  async updateUserStorageData(userId: number, data: Partial<typeof userStorageData.$inferInsert>) {
+    await db.update(userStorageData)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(userStorageData.userId, userId));
+
+    return this.getUserStorageData(userId);
+  }
+
+  async clearUserCache(userId: number) {
+    const currentData = await this.getUserStorageData(userId);
+    const newTotalUsed = currentData.totalUsed - currentData.cache;
+
+    await this.updateUserStorageData(userId, {
+      cache: 0,
+      totalUsed: newTotalUsed,
+    });
+  }
+
+  async deleteAllUserData(userId: number) {
+    // Delete in order to respect foreign key constraints
+    await db.delete(messages).where(eq(messages.senderId, userId));
+    await db.delete(calls).where(or(
+      eq(calls.callerId, userId),
+      eq(calls.receiverId, userId)
+    ));
+    await db.delete(conversations).where(or(
+      eq(conversations.participant1Id, userId),
+      eq(conversations.participant2Id, userId)
+    ));
+    await db.delete(contacts).where(eq(contacts.userId, userId));
+    await db.delete(contactSyncSessions).where(eq(contactSyncSessions.userId, userId));
+    await db.delete(otpCodes).where(eq(otpCodes.phoneNumber, 
+      (await this.getUser(userId))?.phoneNumber || ''
+    ));
+    await db.delete(notificationSettings).where(eq(notificationSettings.userId, userId));
+    await db.delete(userStorageData).where(eq(userStorageData.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
   }
 
   // Message methods

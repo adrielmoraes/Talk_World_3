@@ -919,17 +919,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      // For now, return default settings
-      const settings = {
-        messageNotifications: true,
-        callNotifications: true,
-        groupNotifications: true,
-        soundEnabled: true,
-        vibrationEnabled: true,
-        notificationSound: "default",
-        ringtone: "default",
-      };
-
+      
+      const settings = await storage.getUserNotificationSettings(req.userId);
       res.json({ settings });
     } catch (error) {
       console.error("Error fetching notification settings:", error);
@@ -943,11 +934,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const settings = req.body;
-
-      // For now, just return success
-      // In a real app, you would save these to the database
-      res.json({ message: "Settings updated successfully", settings });
+      
+      const settingsData = req.body;
+      const updatedSettings = await storage.updateNotificationSettings(req.userId, settingsData);
+      res.json({ message: "Settings updated successfully", settings: updatedSettings });
     } catch (error) {
       console.error("Error updating notification settings:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -960,23 +950,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      // Mock storage data
-      const storageData = {
-        totalUsed: 245,
-        photos: 120,
-        videos: 89,
-        audio: 25,
-        cache: 11,
-        total: 1000,
+      
+      const storageData = await storage.getUserStorageData(req.userId);
+      
+      const responseData = {
+        totalUsed: storageData.totalUsed,
+        photos: storageData.photos,
+        videos: storageData.videos,
+        audio: storageData.audio,
+        cache: storageData.cache,
+        total: 1000, // Fixed total storage limit
       };
 
       const settings = {
-        autoDownloadPhotos: true,
-        autoDownloadVideos: false,
-        autoDownloadAudio: true,
+        autoDownloadPhotos: storageData.autoDownloadPhotos,
+        autoDownloadVideos: storageData.autoDownloadVideos,
+        autoDownloadAudio: storageData.autoDownloadAudio,
       };
 
-      res.json({ storage: storageData, settings });
+      res.json({ storage: responseData, settings });
     } catch (error) {
       console.error("Error fetching storage info:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -989,10 +981,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const settings = req.body;
-
-      // For now, just return success
-      res.json({ message: "Download settings updated successfully", settings });
+      
+      const settingsData = req.body;
+      const updatedSettings = await storage.updateUserStorageData(req.userId, settingsData);
+      res.json({ message: "Download settings updated successfully", settings: updatedSettings });
     } catch (error) {
       console.error("Error updating download settings:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -1005,8 +997,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      // For now, just return success
-      // In a real app, you would clear actual cache files
+      
+      await storage.clearUserCache(req.userId);
       res.json({ message: "Cache cleared successfully" });
     } catch (error) {
       console.error("Error clearing cache:", error);
@@ -1020,11 +1012,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      // For now, just return success
-      // In a real app, you would delete user data
+      
+      await storage.deleteAllUserData(req.userId);
       res.json({ message: "All data deleted successfully" });
     } catch (error) {
       console.error("Error deleting user data:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Get conversation settings
+  app.get("/api/user/conversation-settings", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      // Mock settings for now - in production, store in database
+      const settings = {
+        defaultTranslationEnabled: false,
+        defaultTargetLanguage: "en-US",
+        autoTranslate: true,
+        showOriginalText: true,
+        archiveOldMessages: false,
+        messageRetentionDays: "30",
+      };
+
+      res.json({ settings });
+    } catch (error) {
+      console.error("Error fetching conversation settings:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Update conversation settings
+  app.patch("/api/user/conversation-settings", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      const settingsData = req.body;
+      // In production, save to database
+      res.json({ message: "Conversation settings updated successfully", settings: settingsData });
+    } catch (error) {
+      console.error("Error updating conversation settings:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Get call settings
+  app.get("/api/user/call-settings", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      // Mock settings for now - in production, store in database
+      const settings = {
+        enableVoiceTranslation: true,
+        voiceTranslationLanguage: "en-US",
+        enableEchoCancellation: true,
+        enableNoiseSuppression: true,
+        microphoneVolume: 80,
+        speakerVolume: 70,
+        defaultCallType: "voice",
+        autoAnswer: false,
+        callWaiting: true,
+      };
+
+      res.json({ settings });
+    } catch (error) {
+      console.error("Error fetching call settings:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Update call settings
+  app.patch("/api/user/call-settings", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      const settingsData = req.body;
+      // In production, save to database
+      res.json({ message: "Call settings updated successfully", settings: settingsData });
+    } catch (error) {
+      console.error("Error updating call settings:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });

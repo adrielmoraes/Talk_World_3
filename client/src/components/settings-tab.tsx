@@ -35,16 +35,10 @@ export default function SettingsTab() {
         setLocation("/profile-edit");
         break;
       case "conversas e tradução":
-        toast({
-          title: "Recurso não implementado",
-          description: "Configurações de conversas e tradução serão implementadas em versão futura.",
-        });
+        setLocation("/conversations-settings");
         break;
       case "chamadas":
-        toast({
-          title: "Recurso não implementado",
-          description: "Configurações de chamadas serão implementadas em versão futura.",
-        });
+        setLocation("/calls-settings");
         break;
       case "notificações":
         setLocation("/notifications-settings");

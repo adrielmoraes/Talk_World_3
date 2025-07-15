@@ -14,6 +14,8 @@ import ProfileEdit from "./pages/profile-edit";
 import NotificationsSettings from "./pages/notifications-settings";
 import StorageSettings from "./pages/storage-settings";
 import NotFoundPage from "./pages/not-found";
+import ConversationsSettings from "./pages/conversations-settings";
+import CallsSettings from "./pages/calls-settings";
 
 function Router() {
   return (
@@ -27,6 +29,8 @@ function Router() {
       <Route path="/profile-edit" component={ProfileEdit} />
       <Route path="/notifications-settings" component={NotificationsSettings} />
       <Route path="/storage-settings" component={StorageSettings} />
+      <Route path="/conversations-settings" component={ConversationsSettings} />
+      <Route path="/calls-settings" component={CallsSettings} />
       <Route component={NotFoundPage} />
     </Switch>
   );
