@@ -193,97 +193,129 @@ export class VoiceTranslationService {
 
 
   /**
-   * Generate speech from text using OpenAI TTS
+   * Generate speech from text using Coqui TTS
    */
   async generateSpeech(text: string, language: string = 'en-US'): Promise<Buffer | null> {
     try {
       console.log(`[VoiceTranslation] Generating speech for: "${text}" in ${language}`);
       
-      // Map language codes to OpenAI TTS voices
+      // Get the Coqui TTS server URL from environment variables or use default
+      const coquiServerUrl = process.env.COQUI_TTS_SERVER_URL || 'http://localhost:5002';
+      
+      // Map language codes to Coqui TTS compatible language/speaker IDs
+      const languageMap: Record<string, { language: string; speaker?: string }> = {
+        'en-US': { language: 'en', speaker: 'p225' },
+        'en-GB': { language: 'en', speaker: 'p226' },
+        'pt-BR': { language: 'pt', speaker: 'p227' },
+        'pt-PT': { language: 'pt', speaker: 'p228' },
+        'es-ES': { language: 'es', speaker: 'p229' },
+        'es-MX': { language: 'es', speaker: 'p230' },
+        'fr-FR': { language: 'fr', speaker: 'p231' },
+        'fr-CA': { language: 'fr', speaker: 'p232' },
+        'de-DE': { language: 'de', speaker: 'p233' },
+        'it-IT': { language: 'it', speaker: 'p234' },
+        'ja-JP': { language: 'ja', speaker: 'p235' },
+        'ko-KR': { language: 'ko', speaker: 'p236' },
+        'zh-CN': { language: 'zh-cn', speaker: 'p237' },
+        'zh-TW': { language: 'zh-tw', speaker: 'p238' },
+        'ru-RU': { language: 'ru', speaker: 'p239' },
+        'ar-SA': { language: 'ar', speaker: 'p240' },
+        'hi-IN': { language: 'hi', speaker: 'p241' },
+        'th-TH': { language: 'th', speaker: 'p242' },
+        'vi-VN': { language: 'vi', speaker: 'p243' },
+        'tr-TR': { language: 'tr', speaker: 'p244' },
+        'pl-PL': { language: 'pl', speaker: 'p245' },
+        'nl-NL': { language: 'nl', speaker: 'p246' },
+        'sv-SE': { language: 'sv', speaker: 'p247' },
+        'da-DK': { language: 'da', speaker: 'p248' },
+        'fi-FI': { language: 'fi', speaker: 'p249' },
+        'no-NO': { language: 'no', speaker: 'p250' },
+        'cs-CZ': { language: 'cs', speaker: 'p251' },
+        'hu-HU': { language: 'hu', speaker: 'p252' },
+        'ro-RO': { language: 'ro', speaker: 'p253' },
+        'uk-UA': { language: 'uk', speaker: 'p254' },
+        'he-IL': { language: 'he', speaker: 'p255' },
+        'fa-IR': { language: 'fa', speaker: 'p256' },
+        'ur-PK': { language: 'ur', speaker: 'p257' },
+        'bn-BD': { language: 'bn', speaker: 'p258' },
+        'ta-IN': { language: 'ta', speaker: 'p259' },
+        'te-IN': { language: 'te', speaker: 'p260' },
+        'ml-IN': { language: 'ml', speaker: 'p261' },
+        'kn-IN': { language: 'kn', speaker: 'p262' },
+        'gu-IN': { language: 'gu', speaker: 'p263' },
+        'pa-IN': { language: 'pa', speaker: 'p264' },
+        'ne-NP': { language: 'ne', speaker: 'p265' },
+        'si-LK': { language: 'si', speaker: 'p266' },
+        'my-MM': { language: 'my', speaker: 'p267' },
+        'km-KH': { language: 'km', speaker: 'p268' },
+        'lo-LA': { language: 'lo', speaker: 'p269' },
+        'ka-GE': { language: 'ka', speaker: 'p270' },
+        'am-ET': { language: 'am', speaker: 'p271' },
+        'sw-KE': { language: 'sw', speaker: 'p272' },
+        'zu-ZA': { language: 'zu', speaker: 'p273' },
+        'af-ZA': { language: 'af', speaker: 'p274' },
+        'ms-MY': { language: 'ms', speaker: 'p275' },
+        'tl-PH': { language: 'tl', speaker: 'p276' },
+        'id-ID': { language: 'id', speaker: 'p277' },
+        'jv-ID': { language: 'jv', speaker: 'p278' },
+      };
+      
+      const mappedLanguage = languageMap[language] || { language: 'en', speaker: 'p225' };
+      
+      // Try Coqui TTS first, fallback to OpenAI TTS if unavailable
+      try {
+        // Prepare the request payload for Coqui TTS
+        const payload = {
+          text: text,
+          language_id: mappedLanguage.language,
+          speaker_id: mappedLanguage.speaker,
+          style_wav: '',
+          speed: 1.0
+        };
+        
+        // Make the request to Coqui TTS server
+        const response = await fetch(`${coquiServerUrl}/api/tts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'audio/wav',
+          },
+          body: JSON.stringify(payload),
+        });
+        
+        if (response.ok) {
+          const audioArrayBuffer = await response.arrayBuffer();
+          const audioBuffer = Buffer.from(audioArrayBuffer);
+          
+          console.log(`[VoiceTranslation] Generated ${audioBuffer.length} bytes of audio via Coqui TTS`);
+          return audioBuffer;
+        } else {
+          console.warn(`[VoiceTranslation] Coqui TTS server responded with status: ${response.status}, falling back to OpenAI TTS`);
+        }
+      } catch (coquiError) {
+        console.warn('[VoiceTranslation] Coqui TTS unavailable, falling back to OpenAI TTS:', coquiError);
+      }
+      
+      // Fallback to OpenAI TTS
       const voiceMap: { [key: string]: string } = {
-        'en-US': 'alloy',
-        'en-GB': 'echo',
-        'es-ES': 'fable',
-        'fr-FR': 'onyx',
-        'de-DE': 'nova',
-        'it-IT': 'shimmer',
-        'pt-BR': 'alloy',
-        'pt-PT': 'alloy',
-        'ja-JP': 'echo',
-        'ko-KR': 'fable',
-        'zh-CN': 'onyx',
-        'ru-RU': 'nova',
-        'ar-SA': 'shimmer',
-        'hi-IN': 'alloy',
-        'th-TH': 'echo',
-        'vi-VN': 'fable',
-        'tr-TR': 'onyx',
-        'pl-PL': 'nova',
-        'nl-NL': 'shimmer',
-        'sv-SE': 'alloy',
-        'da-DK': 'echo',
-        'fi-FI': 'fable',
-        'no-NO': 'onyx',
-        'cs-CZ': 'nova',
-        'hu-HU': 'shimmer',
-        'ro-RO': 'alloy',
-        'uk-UA': 'echo',
-        'he-IL': 'fable',
-        'fa-IR': 'onyx',
-        'ur-PK': 'nova',
-        'bn-BD': 'shimmer',
-        'ta-IN': 'alloy',
-        'te-IN': 'echo',
-        'ml-IN': 'fable',
-        'kn-IN': 'onyx',
-        'gu-IN': 'nova',
-        'pa-IN': 'shimmer',
-        'ne-NP': 'alloy',
-        'si-LK': 'echo',
-        'my-MM': 'fable',
-        'km-KH': 'onyx',
-        'lo-LA': 'nova',
-        'ka-GE': 'shimmer',
-        'am-ET': 'alloy',
-        'sw-KE': 'echo',
-        'zu-ZA': 'fable',
-        'af-ZA': 'onyx',
-        'ms-MY': 'nova',
-        'tl-PH': 'shimmer',
-        'id-ID': 'alloy',
-        'jv-ID': 'echo',
-        'haw-US': 'fable',
-        'mi-NZ': 'onyx',
-        'cy-GB': 'nova',
-        'ga-IE': 'shimmer',
-        'mt-MT': 'alloy',
-        'is-IS': 'echo',
-        'fo-FO': 'fable',
-        'kl-GL': 'onyx',
-        'eu-ES': 'nova',
-        'ca-ES': 'shimmer',
-        'gl-ES': 'alloy',
-        'ast-ES': 'echo',
-        'co-FR': 'fable',
-        'br-FR': 'onyx',
-        'oc-FR': 'nova',
-        'rm-CH': 'shimmer',
-        'lb-LU': 'alloy',
-        'li-NL': 'echo',
-        'fy-NL': 'fable',
-        'nds-DE': 'onyx',
-        'hsb-DE': 'nova',
-        'dsb-DE': 'shimmer',
-        'yi-US': 'alloy',
-        'la-VA': 'echo',
-        'eo-001': 'fable',
-        'ia-001': 'onyx',
-        'vo-001': 'nova'
+        'en-US': 'alloy', 'en-GB': 'echo', 'es-ES': 'fable', 'fr-FR': 'onyx', 
+        'de-DE': 'nova', 'it-IT': 'shimmer', 'pt-BR': 'alloy', 'pt-PT': 'alloy',
+        'ja-JP': 'echo', 'ko-KR': 'fable', 'zh-CN': 'onyx', 'ru-RU': 'nova',
+        'ar-SA': 'shimmer', 'hi-IN': 'alloy', 'th-TH': 'echo', 'vi-VN': 'fable',
+        'tr-TR': 'onyx', 'pl-PL': 'nova', 'nl-NL': 'shimmer', 'sv-SE': 'alloy',
+        'da-DK': 'echo', 'fi-FI': 'fable', 'no-NO': 'onyx', 'cs-CZ': 'nova',
+        'hu-HU': 'shimmer', 'ro-RO': 'alloy', 'uk-UA': 'echo', 'he-IL': 'fable',
+        'fa-IR': 'onyx', 'ur-PK': 'nova', 'bn-BD': 'shimmer', 'ta-IN': 'alloy',
+        'te-IN': 'echo', 'ml-IN': 'fable', 'kn-IN': 'onyx', 'gu-IN': 'nova',
+        'pa-IN': 'shimmer', 'ne-NP': 'alloy', 'si-LK': 'echo', 'my-MM': 'fable',
+        'km-KH': 'onyx', 'lo-LA': 'nova', 'ka-GE': 'shimmer', 'am-ET': 'alloy',
+        'sw-KE': 'echo', 'zu-ZA': 'fable', 'af-ZA': 'onyx', 'ms-MY': 'nova',
+        'tl-PH': 'shimmer', 'id-ID': 'alloy', 'jv-ID': 'echo'
       };
       
       const voice = voiceMap[language] || 'alloy';
       
-      // Generate audio using OpenAI TTS
+      // Generate audio using OpenAI TTS as fallback
       const mp3Response = await openai.audio.speech.create({
         model: 'tts-1',
         voice: voice as any,
@@ -292,11 +324,10 @@ export class VoiceTranslationService {
         speed: 1.0
       });
       
-      // Convert to buffer
       const buffer = Buffer.from(await mp3Response.arrayBuffer());
-      
-      console.log(`[VoiceTranslation] Generated ${buffer.length} bytes of audio`);
+      console.log(`[VoiceTranslation] Generated ${buffer.length} bytes of audio via OpenAI TTS (fallback)`);
       return buffer;
+      
     } catch (error) {
       console.error('[VoiceTranslation] Error generating speech:', error);
       return null;
