@@ -77,7 +77,7 @@ The application follows a fullstack TypeScript architecture with clear separatio
 ### Integrations Implemented
 - ✅ **Groq API**: Ultra-fast text translation with llama-3.3-70b-versatile model
 - ✅ **OpenAI Whisper**: Speech-to-text transcription for voice translation
-- ✅ **OpenAI TTS**: Text-to-speech synthesis for voice translation playback
+- ✅ **Coqui TTS**: Primary text-to-speech synthesis with OpenAI TTS fallback
 - ⚠️ SMS service for OTP delivery (placeholder implementation)
 
 ## Deployment Strategy
@@ -160,14 +160,15 @@ The build process creates a single Express server that serves both the API and s
 - ✅ Correção de bug crítico na tela de contatos (toLowerCase em campo undefined)
 
 ### Implementação Completa Fase 7 - Tradução de Voz (Janeiro 2025) - NOVO
-- ✅ Substituição completa do Coqui TTS por OpenAI TTS para maior confiabilidade
+- ✅ Implementação do Coqui TTS como engine principal com OpenAI TTS como fallback
 - ✅ Implementação do endpoint `/api/voice/tts` para geração de áudio
 - ✅ Sistema de reprodução automática de traduções em tempo real
-- ✅ Mapeamento extensivo de idiomas para vozes OpenAI (50+ idiomas)
+- ✅ Mapeamento extensivo de idiomas para vozes Coqui TTS (50+ idiomas)
 - ✅ Integração completa no hook `use-voice-translation` com TTS
 - ✅ Interface de chamada de voz aprimorada com indicadores de tradução
 - ✅ Sistema de detecção de voz e processamento inteligente de chunks
-- ✅ Pipeline completo: Whisper STT → Groq Translation → OpenAI TTS
+- ✅ Pipeline completo: Whisper STT → Groq Translation → Coqui TTS → OpenAI TTS (fallback)
+- ✅ Documentação completa do Coqui TTS em `README-COQUI-TTS.md`
 
 ### Implementação Groq API (Fases 5 e 7)
 - ✅ Criado serviço `groqTranslationService` com suporte a tradução de texto

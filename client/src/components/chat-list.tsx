@@ -1,11 +1,20 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Search, MoreVertical, MessageCircle } from "lucide-react";
+import { Search, MoreVertical, MessageCircle, Plus, Users, Settings, Archive, Star, Pin, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 export default function ChatList() {
   const [, setLocation] = useLocation();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showNewChatDialog, setShowNewChatDialog] = useState(false);
+  const [selectedChatFilter, setSelectedChatFilter] = useState("all");
 
   const { data: conversations } = useQuery({
     queryKey: ["/api/conversations"],
@@ -21,25 +30,94 @@ export default function ChatList() {
     setLocation(`/chat/${conversationId}`);
   };
 
+  const filteredConversations = conversations?.conversations?.filter((conversation: any) => {
+    const matchesSearch = !searchQuery || 
+      conversation.otherUser?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      conversation.lastMessage?.text?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesFilter = selectedChatFilter === "all" || 
+      (selectedChatFilter === "unread" && conversation.unreadCount > 0) ||
+      (selectedChatFilter === "archived" && conversation.isArchived) ||
+      (selectedChatFilter === "starred" && conversation.isStarred);
+    
+    return matchesSearch && matchesFilter;
+  }) || [];
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="bg-whatsapp-secondary text-white p-4 flex items-center justify-between">
-        <h1 className="text-lg font-medium">Talk World</h1>
-        <div className="flex space-x-4">
-          <button>
-            <Search className="h-6 w-6" />
-          </button>
-          <button>
-            <MoreVertical className="h-6 w-6" />
-          </button>
+      <div className="bg-whatsapp-secondary text-white p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-lg font-medium">Talk World</h1>
+          <div className="flex space-x-2">
+            <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-white hover:bg-whatsapp-primary">
+                  <Plus className="h-5 w-5" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Nova Conversa</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Selecione um contato para iniciar uma nova conversa.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setShowNewChatDialog(false);
+                      setLocation("/app?tab=contacts");
+                    }}
+                    className="w-full"
+                  >
+                    <Users className="h-4 w-4 mr-2" />
+                    Selecionar Contato
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-white hover:bg-whatsapp-primary">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setLocation("/app?tab=settings")}>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Configurações
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSelectedChatFilter("archived")}>
+                  <Archive className="h-4 w-4 mr-2" />
+                  Chats Arquivados
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSelectedChatFilter("starred")}>
+                  <Star className="h-4 w-4 mr-2" />
+                  Mensagens Favoritas
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Pesquisar conversas..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 bg-whatsapp-elevated border-none text-white placeholder-gray-400"
+          />
         </div>
       </div>
 
       {/* Chat List */}
       <div className="flex-1 overflow-y-auto">
-        {conversations?.conversations?.length > 0 ? (
-          conversations.conversations.map((conversation: any) => (
+        {filteredConversations.length > 0 ? (
+          filteredConversations.map((conversation: any) => (
             <div
               key={conversation.id}
               onClick={() => openChat(conversation.id)}

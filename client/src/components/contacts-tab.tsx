@@ -302,7 +302,7 @@ export default function ContactsTab() {
                               />
                             ) : (
                               <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center text-white font-medium">
-                                {contact.contactName.charAt(0)}
+                                {contact.contactName?.charAt(0)?.toUpperCase() || "?"}
                               </div>
                             )}
                             <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
@@ -363,7 +363,7 @@ export default function ContactsTab() {
                       <CardContent className="p-4">
                         <div className="flex items-center">
                           <div className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium">
-                            {contact.contactName.charAt(0)}
+                            {contact.contactName?.charAt(0)?.toUpperCase() || "?"}
                           </div>
                           
                           <div className="flex-1 ml-3">
