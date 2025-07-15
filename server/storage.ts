@@ -6,6 +6,7 @@ import {
   messages, 
   calls, 
   contactSyncHistory,
+  contactSyncSessions,
   notificationSettings,
   userStorageData,
   type User,
@@ -15,6 +16,7 @@ import {
   type Message,
   type Call,
   type ContactSyncHistory,
+  type ContactSyncSession,
   insertUserSchema,
   insertOtpSchema,
   insertContactSchema,
@@ -22,6 +24,7 @@ import {
   insertMessageSchema,
   insertCallSchema,
   insertContactSyncHistorySchema,
+  insertContactSyncSessionSchema,
   insertNotificationSettingsSchema,
   insertUserStorageDataSchema,
 } from "@shared/schema";
@@ -29,6 +32,15 @@ import { db } from "./db";
 import { eq, and, or, desc, inArray, ne } from "drizzle-orm";
 
 // Storage interface
+// Type definitions for storage interface
+type InsertUser = typeof users.$inferInsert;
+type InsertOtpCode = typeof otpCodes.$inferInsert;
+type InsertContact = typeof contacts.$inferInsert;
+type InsertConversation = typeof conversations.$inferInsert;
+type InsertMessage = typeof messages.$inferInsert;
+type InsertCall = typeof calls.$inferInsert;
+type InsertContactSyncSession = typeof contactSyncSessions.$inferInsert;
+
 interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
@@ -149,17 +161,25 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .select({
         id: contacts.id,
+        userId: contacts.userId,
+        contactUserId: contacts.contactUserId,
+        contactName: contacts.contactName,
+        phoneNumber: contacts.phoneNumber,
+        isRegistered: contacts.isRegistered,
         nickname: contacts.nickname,
+        syncedAt: contacts.syncedAt,
+        createdAt: contacts.createdAt,
         contactUser: {
           id: users.id,
           username: users.username,
           phoneNumber: users.phoneNumber,
           preferredLanguage: users.preferredLanguage,
           profilePhoto: users.profilePhoto,
+          isVerified: users.isVerified,
         }
       })
       .from(contacts)
-      .innerJoin(users, eq(contacts.contactUserId, users.id))
+      .leftJoin(users, eq(contacts.contactUserId, users.id))
       .where(eq(contacts.userId, userId));
 
     return result;
@@ -172,6 +192,32 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Contact user not found');
     }
 
+    // Check if contact already exists
+    const existingContact = await db
+      .select()
+      .from(contacts)
+      .where(and(
+        eq(contacts.userId, userId),
+        eq(contacts.contactUserId, contactUserId)
+      ))
+      .limit(1);
+
+    if (existingContact.length > 0) {
+      // Update existing contact
+      const [updatedContact] = await db
+        .update(contacts)
+        .set({
+          contactName: contactName || contactUser.username || contactUser.phoneNumber,
+          phoneNumber: phoneNumber || contactUser.phoneNumber,
+          isRegistered: true,
+          syncedAt: new Date()
+        })
+        .where(eq(contacts.id, existingContact[0].id))
+        .returning();
+      return updatedContact;
+    }
+
+    // Create new contact
     const [contact] = await db
       .insert(contacts)
       .values({ 

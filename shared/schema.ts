@@ -204,6 +204,13 @@ export type Call = typeof calls.$inferSelect;
 export type InsertCall = z.infer<typeof insertCallSchema>;
 export const selectCallSchema = createSelectSchema(calls);
 
+// Contact sync sessions schema
+export const insertContactSyncSessionSchema = createInsertSchema(contactSyncSessions);
+export const selectContactSyncSessionSchema = createSelectSchema(contactSyncSessions);
+
+export type ContactSyncSession = typeof contactSyncSessions.$inferSelect;
+export type InsertContactSyncSession = typeof contactSyncSessions.$inferInsert;
+
 // Notification Settings
 export const notificationSettings = pgTable('notification_settings', {
   id: serial('id').primaryKey(),
