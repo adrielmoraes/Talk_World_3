@@ -10,6 +10,10 @@ import ProfileSetupScreen from "@/pages/profile-setup";
 import MainApp from "@/pages/main-app";
 import ChatScreen from "@/pages/chat";
 import VoiceCallScreen from "@/pages/voice-call";
+import ProfileEdit from "./pages/profile-edit";
+import NotificationsSettings from "./pages/notifications-settings";
+import StorageSettings from "./pages/storage-settings";
+import NotFoundPage from "./pages/not-found";
 
 function Router() {
   return (
@@ -20,6 +24,10 @@ function Router() {
       <Route path="/app" component={MainApp} />
       <Route path="/chat/:conversationId" component={ChatScreen} />
       <Route path="/call/:contactId" component={VoiceCallScreen} />
+      <Route path="/profile-edit" component={ProfileEdit} />
+      <Route path="/notifications-settings" component={NotificationsSettings} />
+      <Route path="/storage-settings" component={StorageSettings} />
+      <Route component={NotFoundPage} />
     </Switch>
   );
 }
@@ -31,7 +39,7 @@ function App() {
     // Initialize dark mode from localStorage
     const savedDarkMode = localStorage.getItem("darkMode") === "true";
     setDarkMode(savedDarkMode);
-    
+
     if (savedDarkMode) {
       document.documentElement.classList.add("dark");
     } else {
@@ -43,7 +51,7 @@ function App() {
     const newDarkMode = !darkMode;
     setDarkMode(newDarkMode);
     localStorage.setItem("darkMode", newDarkMode.toString());
-    
+
     if (newDarkMode) {
       document.documentElement.classList.add("dark");
     } else {

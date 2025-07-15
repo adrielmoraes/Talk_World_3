@@ -26,17 +26,44 @@ export default function SettingsTab() {
   const user = userData?.user || JSON.parse(localStorage.getItem("user") || "{}");
 
   const handleEditProfile = () => {
-    toast({
-      title: "Recurso não implementado",
-      description: "Edição de perfil será implementada em versão futura.",
-    });
+    setLocation("/profile-edit");
   };
 
   const handleSettingClick = (setting: string) => {
-    toast({
-      title: "Recurso não implementado",
-      description: `Configurações de ${setting} serão implementadas em versão futura.`,
-    });
+    switch (setting) {
+      case "conta":
+        setLocation("/profile-edit");
+        break;
+      case "conversas e tradução":
+        toast({
+          title: "Recurso não implementado",
+          description: "Configurações de conversas e tradução serão implementadas em versão futura.",
+        });
+        break;
+      case "chamadas":
+        toast({
+          title: "Recurso não implementado",
+          description: "Configurações de chamadas serão implementadas em versão futura.",
+        });
+        break;
+      case "notificações":
+        setLocation("/notifications-settings");
+        break;
+      case "armazenamento e dados":
+        setLocation("/storage-settings");
+        break;
+      case "ajuda":
+        toast({
+          title: "Ajuda",
+          description: "Para suporte, entre em contato através do email: suporte@talkworld.app",
+        });
+        break;
+      default:
+        toast({
+          title: "Recurso não implementado",
+          description: `Configurações de ${setting} serão implementadas em versão futura.`,
+        });
+    }
   };
 
   const toggleDarkMode = () => {
