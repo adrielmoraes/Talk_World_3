@@ -440,6 +440,15 @@ export class DatabaseStorage implements IStorage {
     return conversation;
   }
 
+  async updateConversationTranslation(id: number, enabled: boolean): Promise<Conversation> {
+    const [conversation] = await db
+      .update(conversations)
+      .set({ translationEnabled: enabled })
+      .where(eq(conversations.id, id))
+      .returning();
+    return conversation;
+  }
+
   async markMessagesAsRead(conversationId: number, userId: number) {
     await db
       .update(messages)

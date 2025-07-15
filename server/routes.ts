@@ -65,6 +65,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } else if (message.type === 'send_message') {
           // Handle sending messages
           if (ws.userId) {
+            console.log('[WebSocket] Sending message from userId:', ws.userId, 'to conversation:', message.conversationId);
+            
             const newMessage = await storage.createMessage({
               conversationId: message.conversationId,
               senderId: ws.userId,
@@ -73,20 +75,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
               targetLanguage: message.targetLanguage,
             });
 
+            console.log('[WebSocket] Message created:', newMessage);
+
             // Find recipient and send message
-            const conversation = await storage.getConversationById(message.conversationId);
+            const conversation = await storage.getConversationById(message.conversationId, ws.userId);
             if (conversation) {
-              const recipientId = conversation.participant1Id === ws.userId 
-                ? conversation.participant2Id 
-                : conversation.participant1Id;
+              const recipientId = conversation.otherUser?.id;
+              console.log('[WebSocket] Sending to recipient:', recipientId);
 
               const recipientWs = connectedClients.get(recipientId);
               if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+                console.log('[WebSocket] Recipient WebSocket found and open');
                 recipientWs.send(JSON.stringify({
                   type: 'new_message',
                   message: newMessage,
                 }));
+              } else {
+                console.log('[WebSocket] Recipient WebSocket not found or closed');
               }
+            } else {
+              console.log('[WebSocket] Conversation not found for id:', message.conversationId);
             }
           }
         } else if (message.type === 'webrtc_signal') {
@@ -377,7 +385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Conversation not found' });
       }
 
-      res.json(conversation);
+      res.json({ conversation });
     } catch (error) {
       console.error('Get conversation error:', error);
       res.status(500).json({ message: 'Failed to get conversation' });
@@ -559,11 +567,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (result) {
         // Broadcast translation result to WebSocket clients
-        const conversation = await storage.getConversationById(parseInt(conversationId));
+        const conversation = await storage.getConversationById(parseInt(conversationId), req.userId);
         if (conversation) {
-          const recipientId = conversation.participant1Id === req.userId 
-            ? conversation.participant2Id 
-            : conversation.participant1Id;
+          const recipientId = conversation.otherUser?.id;
 
           const recipientWs = connectedClients.get(recipientId);
           if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
