@@ -363,6 +363,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get specific conversation by ID
+  app.get('/api/conversations/:id', authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      const conversationId = parseInt(req.params.id);
+      const conversation = await storage.getConversationById(conversationId, req.userId);
+      
+      if (!conversation) {
+        return res.status(404).json({ message: 'Conversation not found' });
+      }
+      
+      res.json(conversation);
+    } catch (error) {
+      console.error('Get conversation error:', error);
+      res.status(500).json({ message: 'Failed to get conversation' });
+    }
+  });
+
   // Create or get conversation
   app.post('/api/conversations', authenticateToken, async (req, res) => {
     try {
@@ -415,6 +436,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Update translation error:', error);
       res.status(500).json({ message: 'Failed to update translation setting' });
+    }
+  });
+
+  // Mark conversation messages as read
+  app.patch('/api/conversations/:id/mark-read', authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      const conversationId = parseInt(req.params.id);
+      await storage.markMessagesAsRead(conversationId, req.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Mark as read error:', error);
+      res.status(500).json({ message: 'Failed to mark messages as read' });
     }
   });
 

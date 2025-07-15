@@ -34,7 +34,7 @@ export default function ChatScreen() {
 
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
 
-  const { data: conversation } = useQuery({
+  const { data: conversation, isLoading: isLoadingConversation } = useQuery({
     queryKey: ["/api/conversations", conversationId],
     enabled: !!conversationId,
   });
@@ -72,6 +72,29 @@ export default function ChatScreen() {
       setTranslationEnabled(conversation.conversation.translationEnabled);
     }
   }, [conversation]);
+
+  // Mark messages as read when conversation is opened
+  useEffect(() => {
+    const markAsRead = async () => {
+      if (conversationId && conversation) {
+        try {
+          const token = localStorage.getItem("token");
+          await fetch(`/api/conversations/${conversationId}/mark-read`, {
+            method: "PATCH",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+            },
+          });
+          // Invalidate conversations to update unread count
+          queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+        } catch (error) {
+          console.error("Error marking messages as read:", error);
+        }
+      }
+    };
+
+    markAsRead();
+  }, [conversationId, conversation]);
 
   useEffect(() => {
     scrollToBottom();
@@ -146,8 +169,43 @@ export default function ChatScreen() {
 
   const otherUser = conversation?.otherUser;
 
+  // Show loading state
+  if (isLoadingConversation) {
+    return (
+      <div className="h-screen bg-white dark:bg-whatsapp-dark flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-whatsapp-primary mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Carregando conversa...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if conversation not found
+  if (!conversation && !isLoadingConversation) {
+    return (
+      <div className="h-screen bg-white dark:bg-whatsapp-dark flex flex-col">
+        <div className="bg-whatsapp-secondary text-white p-4 flex items-center">
+          <button onClick={goBack} className="mr-3">
+            <ArrowLeft className="h-6 w-6" />
+          </button>
+          <h3 className="font-medium">Conversa não encontrada</h3>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <MessageCircle className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+            <p className="text-gray-600 dark:text-gray-400">Esta conversa não existe ou foi removida.</p>
+            <Button onClick={goBack} className="mt-4">
+              Voltar
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-screen bg-white dark:bg-whatsapp-dark flex flex-col">
+    <div className="h-screen bg-white dark:bg-whatsapp-dark flex flex-col"></div>
       {/* Chat Header */}
       <div className="bg-whatsapp-secondary text-white p-4 flex items-center justify-between">
         <div className="flex items-center">
