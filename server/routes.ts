@@ -10,6 +10,18 @@ import { groqTranslationService } from "./groq-translation";
 import multer from "multer";
 
 const JWT_SECRET = process.env.JWT_SECRET || "talk-world-secret-key";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+const TWILIO_API_URL = process.env.TWILIO_API_URL;
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '26214400');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
+const ALLOWED_FILE_TYPES = process.env.ALLOWED_FILE_TYPES?.split(',') || ['image/jpeg', 'image/png', 'audio/mpeg', 'audio/wav'];
+const TRANSLATION_RATE_LIMIT = parseInt(process.env.TRANSLATION_RATE_LIMIT || '100');
+const VOICE_RATE_LIMIT = parseInt(process.env.VOICE_RATE_LIMIT || '50');
+const OTP_RATE_LIMIT = parseInt(process.env.OTP_RATE_LIMIT || '5');
+const WEBSOCKET_PATH = process.env.WEBSOCKET_PATH || '/ws';
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: number;
@@ -27,7 +39,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
   // WebSocket server for real-time communication
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  const wss = new WebSocketServer({ server: httpServer, path: WEBSOCKET_PATH });
   
   const connectedClients = new Map<number, AuthenticatedWebSocket>();
 
@@ -203,7 +215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Generate JWT token
-      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
       res.json({
         token,
@@ -473,7 +485,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Set up multer for audio file uploads
   const upload = multer({ 
     storage: multer.memoryStorage(),
-    limits: { fileSize: 25 * 1024 * 1024 } // 25MB limit for Whisper API
+    limits: { fileSize: MAX_FILE_SIZE },
+    fileFilter: (req, file, cb) => {
+      if (ALLOWED_FILE_TYPES.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Invalid file type'));
+      }
+    }
   });
 
   // Voice translation endpoint - process audio chunks

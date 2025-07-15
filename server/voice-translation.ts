@@ -3,8 +3,21 @@ import FormData from 'form-data';
 import { Readable } from 'stream';
 import { groqTranslationService } from './groq-translation';
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_URL = process.env.OPENAI_API_URL;
+const WHISPER_MODEL = process.env.WHISPER_MODEL || 'whisper-1';
+const COQUI_TTS_API_URL = process.env.COQUI_TTS_API_URL;
+const COQUI_TTS_MODEL = process.env.COQUI_TTS_MODEL || 'tts_models/multilingual/multi-dataset/xtts_v2';
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_API_URL = process.env.ELEVENLABS_API_URL;
+
+if (!OPENAI_API_KEY) {
+  throw new Error('OPENAI_API_KEY is required in environment variables');
+}
+
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: OPENAI_API_KEY,
+  baseURL: OPENAI_API_URL,
 });
 
 export interface VoiceTranslationChunk {
@@ -38,7 +51,7 @@ export class VoiceTranslationService {
   ): Promise<VoiceTranslationChunk | null> {
     try {
       const chunkKey = `${userId}_${conversationId}`;
-      
+
       // Initialize chunk storage for this user/conversation
       if (!this.audioChunks.has(chunkKey)) {
         this.audioChunks.set(chunkKey, []);
@@ -84,7 +97,7 @@ export class VoiceTranslationService {
 
       // Combine audio chunks into a single buffer
       const combinedBuffer = Buffer.concat(chunks);
-      
+
       // Clear chunks for next batch (keep some overlap)
       const overlapChunks = chunks.slice(-1); // Keep last chunk for overlap
       this.audioChunks.set(chunkKey, overlapChunks);
@@ -94,7 +107,7 @@ export class VoiceTranslationService {
 
       // Transcribe audio using Whisper
       const transcription = await this.transcribeAudio(wavBuffer);
-      
+
       if (!transcription || transcription.trim().length === 0) {
         return null;
       }
@@ -160,19 +173,19 @@ export class VoiceTranslationService {
     const sampleRate = 16000; // 16kHz
     const channels = 1; // Mono
     const bitsPerSample = 16;
-    
+
     const byteRate = sampleRate * channels * bitsPerSample / 8;
     const blockAlign = channels * bitsPerSample / 8;
     const dataSize = pcmBuffer.length;
     const fileSize = 36 + dataSize;
 
     const header = Buffer.alloc(44);
-    
+
     // RIFF header
     header.write('RIFF', 0);
     header.writeUInt32LE(fileSize, 4);
     header.write('WAVE', 8);
-    
+
     // fmt chunk
     header.write('fmt ', 12);
     header.writeUInt32LE(16, 16); // fmt chunk size
@@ -182,7 +195,7 @@ export class VoiceTranslationService {
     header.writeUInt32LE(byteRate, 28);
     header.writeUInt16LE(blockAlign, 32);
     header.writeUInt16LE(bitsPerSample, 34);
-    
+
     // data chunk
     header.write('data', 36);
     header.writeUInt32LE(dataSize, 40);
@@ -198,10 +211,10 @@ export class VoiceTranslationService {
   async generateSpeech(text: string, language: string = 'en-US'): Promise<Buffer | null> {
     try {
       console.log(`[VoiceTranslation] Generating speech for: "${text}" in ${language}`);
-      
+
       // Get the Coqui TTS server URL from environment variables or use default
       const coquiServerUrl = process.env.COQUI_TTS_SERVER_URL || 'http://localhost:5002';
-      
+
       // Map language codes to Coqui TTS compatible language/speaker IDs
       const languageMap: Record<string, { language: string; speaker?: string }> = {
         'en-US': { language: 'en', speaker: 'p225' },
@@ -259,9 +272,9 @@ export class VoiceTranslationService {
         'id-ID': { language: 'id', speaker: 'p277' },
         'jv-ID': { language: 'jv', speaker: 'p278' },
       };
-      
+
       const mappedLanguage = languageMap[language] || { language: 'en', speaker: 'p225' };
-      
+
       // Try Coqui TTS first, fallback to OpenAI TTS if unavailable
       try {
         // Prepare the request payload for Coqui TTS
@@ -272,7 +285,7 @@ export class VoiceTranslationService {
           style_wav: '',
           speed: 1.0
         };
-        
+
         // Make the request to Coqui TTS server
         const response = await fetch(`${coquiServerUrl}/api/tts`, {
           method: 'POST',
@@ -282,11 +295,11 @@ export class VoiceTranslationService {
           },
           body: JSON.stringify(payload),
         });
-        
+
         if (response.ok) {
           const audioArrayBuffer = await response.arrayBuffer();
           const audioBuffer = Buffer.from(audioArrayBuffer);
-          
+
           console.log(`[VoiceTranslation] Generated ${audioBuffer.length} bytes of audio via Coqui TTS`);
           return audioBuffer;
         } else {
@@ -295,7 +308,7 @@ export class VoiceTranslationService {
       } catch (coquiError) {
         console.warn('[VoiceTranslation] Coqui TTS unavailable, falling back to OpenAI TTS:', coquiError);
       }
-      
+
       // Fallback to OpenAI TTS
       const voiceMap: { [key: string]: string } = {
         'en-US': 'alloy', 'en-GB': 'echo', 'es-ES': 'fable', 'fr-FR': 'onyx', 
@@ -312,9 +325,9 @@ export class VoiceTranslationService {
         'sw-KE': 'echo', 'zu-ZA': 'fable', 'af-ZA': 'onyx', 'ms-MY': 'nova',
         'tl-PH': 'shimmer', 'id-ID': 'alloy', 'jv-ID': 'echo'
       };
-      
+
       const voice = voiceMap[language] || 'alloy';
-      
+
       // Generate audio using OpenAI TTS as fallback
       const mp3Response = await openai.audio.speech.create({
         model: 'tts-1',
@@ -323,11 +336,11 @@ export class VoiceTranslationService {
         response_format: 'mp3',
         speed: 1.0
       });
-      
+
       const buffer = Buffer.from(await mp3Response.arrayBuffer());
       console.log(`[VoiceTranslation] Generated ${buffer.length} bytes of audio via OpenAI TTS (fallback)`);
       return buffer;
-      
+
     } catch (error) {
       console.error('[VoiceTranslation] Error generating speech:', error);
       return null;
@@ -339,16 +352,16 @@ export class VoiceTranslationService {
    */
   cleanupConversation(userId: number, conversationId: number): void {
     const chunkKey = `${userId}_${conversationId}`;
-    
+
     // Clear timer
     if (this.chunkTimers.has(chunkKey)) {
       clearTimeout(this.chunkTimers.get(chunkKey)!);
       this.chunkTimers.delete(chunkKey);
     }
-    
+
     // Clear audio chunks
     this.audioChunks.delete(chunkKey);
-    
+
     console.log('[VoiceTranslation] Cleaned up resources for:', chunkKey);
   }
 }

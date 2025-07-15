@@ -1,7 +1,10 @@
 import Groq from 'groq-sdk';
 
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama3-70b-8192'; // Provide a default value
+
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: GROQ_API_KEY,
 });
 
 export interface TranslationResult {
@@ -18,7 +21,6 @@ export interface LanguageDetectionResult {
 }
 
 export class GroqTranslationService {
-  private readonly MODEL = 'llama-3.3-70b-versatile';
   private readonly TEMPERATURE = 0.1;
   private readonly MAX_TOKENS = 1000;
 
@@ -44,7 +46,7 @@ export class GroqTranslationService {
             content: `Detect the language of this text: "${text}"`
           }
         ],
-        model: this.MODEL,
+        model: GROQ_MODEL,
         temperature: this.TEMPERATURE,
         max_tokens: 100,
       });
@@ -62,7 +64,7 @@ export class GroqTranslationService {
           return this.fallbackLanguageDetection(text);
         }
       }
-      
+
       return this.fallbackLanguageDetection(text);
     } catch (error) {
       console.error('[GroqTranslation] Language detection error:', error);
@@ -114,7 +116,7 @@ export class GroqTranslationService {
             content: text
           }
         ],
-        model: this.MODEL,
+        model: GROQ_MODEL,
         temperature: this.TEMPERATURE,
         max_tokens: this.MAX_TOKENS,
       });
@@ -131,7 +133,7 @@ export class GroqTranslationService {
 
     } catch (error) {
       console.error('[GroqTranslation] Translation error:', error);
-      
+
       // Return original text if translation fails
       return {
         originalText: text,
@@ -178,7 +180,7 @@ export class GroqTranslationService {
             role: 'system',
             content: `You are a professional translator specializing in ${sourceLanguageName} to ${targetLanguageName} translation.
             Context: ${context}
-            
+
             Consider the context when translating to ensure accuracy and appropriate tone.
             Return ONLY the translated text without explanations, quotes, or additional commentary.
             Maintain the original meaning while adapting to the cultural context of the target language.`
@@ -188,7 +190,7 @@ export class GroqTranslationService {
             content: text
           }
         ],
-        model: this.MODEL,
+        model: GROQ_MODEL,
         temperature: this.TEMPERATURE,
         max_tokens: this.MAX_TOKENS,
       });
@@ -205,7 +207,7 @@ export class GroqTranslationService {
 
     } catch (error) {
       console.error('[GroqTranslation] Context translation error:', error);
-      
+
       // Fallback to regular translation
       return this.translateText(text, targetLanguage, sourceLanguage);
     }
@@ -222,7 +224,7 @@ export class GroqTranslationService {
     const promises = texts.map(text => 
       this.translateText(text, targetLanguage, sourceLanguage)
     );
-    
+
     return Promise.all(promises);
   }
 
@@ -253,17 +255,17 @@ export class GroqTranslationService {
    */
   private fallbackLanguageDetection(text: string): LanguageDetectionResult {
     const lowerText = text.toLowerCase();
-    
+
     // Portuguese patterns
     const portugueseWords = ['você', 'não', 'está', 'para', 'com', 'uma', 'que', 'mais', 'seu', 'como', 'por', 'da', 'de', 'do', 'na', 'no'];
     const ptScore = portugueseWords.reduce((score, word) => 
       score + (lowerText.includes(word) ? 1 : 0), 0);
-    
+
     // Spanish patterns
     const spanishWords = ['usted', 'está', 'para', 'con', 'una', 'que', 'más', 'como', 'pero', 'muy', 'el', 'la', 'en', 'es', 'por'];
     const esScore = spanishWords.reduce((score, word) => 
       score + (lowerText.includes(word) ? 1 : 0), 0);
-    
+
     // French patterns
     const frenchWords = ['vous', 'est', 'pour', 'avec', 'une', 'que', 'plus', 'comme', 'mais', 'très', 'le', 'la', 'de', 'et', 'dans'];
     const frScore = frenchWords.reduce((score, word) => 
