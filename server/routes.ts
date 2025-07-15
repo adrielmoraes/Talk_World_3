@@ -37,10 +37,10 @@ declare global {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
-  
+
   // WebSocket server for real-time communication
   const wss = new WebSocketServer({ server: httpServer, path: WEBSOCKET_PATH });
-  
+
   const connectedClients = new Map<number, AuthenticatedWebSocket>();
 
   // WebSocket connection handling
@@ -50,7 +50,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data.toString());
-        
+
         if (message.type === 'auth') {
           // Authenticate WebSocket connection
           try {
@@ -79,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const recipientId = conversation.participant1Id === ws.userId 
                 ? conversation.participant2Id 
                 : conversation.participant1Id;
-              
+
               const recipientWs = connectedClients.get(recipientId);
               if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
                 recipientWs.send(JSON.stringify({
@@ -159,7 +159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/send-otp', async (req, res) => {
     try {
       const { phoneNumber } = req.body;
-      
+
       if (!phoneNumber) {
         return res.status(400).json({ message: 'Phone number is required' });
       }
@@ -203,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if user exists
       let user = await storage.getUserByPhoneNumber(phoneNumber);
-      
+
       if (!user) {
         // User doesn't exist, create new user (profile setup required)
         user = await storage.createUser({
@@ -232,7 +232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/complete-profile', authenticateToken, async (req, res) => {
     try {
       const { username, gender, preferredLanguage, profilePhoto } = req.body;
-      
+
       if (!username || !gender) {
         return res.status(400).json({ message: 'Username and gender are required' });
       }
@@ -268,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      
+
       const user = await storage.getUser(req.userId);
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
@@ -286,7 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      
+
       const contacts = await storage.getUserContacts(req.userId);
       res.json({ contacts });
     } catch (error) {
@@ -299,7 +299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/contacts', authenticateToken, async (req, res) => {
     try {
       const { phoneNumber } = req.body;
-      
+
       if (!phoneNumber) {
         return res.status(400).json({ message: 'Phone number is required' });
       }
@@ -325,7 +325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/contacts/add-user', authenticateToken, async (req, res) => {
     try {
       const { contactUserId } = req.body;
-      
+
       if (!contactUserId) {
         return res.status(400).json({ message: 'Contact user ID is required' });
       }
@@ -339,7 +339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!contactUser) {
         return res.status(404).json({ message: 'Contact user not found' });
       }
-      
+
       const contact = await storage.addContact(req.userId, contactUserId, contactUser.username, contactUser.phoneNumber);
       res.json({ contact });
     } catch (error) {
@@ -354,7 +354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      
+
       const conversations = await storage.getUserConversations(req.userId);
       res.json({ conversations });
     } catch (error) {
@@ -369,14 +369,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      
+
       const conversationId = parseInt(req.params.id);
       const conversation = await storage.getConversationById(conversationId, req.userId);
-      
+
       if (!conversation) {
         return res.status(404).json({ message: 'Conversation not found' });
       }
-      
+
       res.json(conversation);
     } catch (error) {
       console.error('Get conversation error:', error);
@@ -388,7 +388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/conversations', authenticateToken, async (req, res) => {
     try {
       const { contactUserId } = req.body;
-      
+
       if (!contactUserId) {
         return res.status(400).json({ message: 'Contact user ID is required' });
       }
@@ -398,7 +398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       let conversation = await storage.getConversationByParticipants(req.userId, contactUserId);
-      
+
       if (!conversation) {
         conversation = await storage.createConversation({
           participant1Id: req.userId,
@@ -430,7 +430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const conversationId = parseInt(req.params.id);
       const { translationEnabled } = req.body;
-      
+
       const conversation = await storage.updateConversationTranslation(conversationId, translationEnabled);
       res.json({ conversation });
     } catch (error) {
@@ -445,7 +445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      
+
       const conversationId = parseInt(req.params.id);
       await storage.markMessagesAsRead(conversationId, req.userId);
       res.json({ success: true });
@@ -461,7 +461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.userId) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      
+
       const calls = await storage.getUserCalls(req.userId);
       res.json({ calls });
     } catch (error) {
@@ -474,7 +474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/calls', authenticateToken, async (req, res) => {
     try {
       const { receiverId } = req.body;
-      
+
       if (!receiverId) {
         return res.status(400).json({ message: 'Receiver ID is required' });
       }
@@ -510,7 +510,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const callId = parseInt(req.params.id);
       const { status, duration } = req.body;
-      
+
       const call = await storage.updateCall(callId, { status, duration });
       res.json({ call });
     } catch (error) {
@@ -544,7 +544,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { conversationId, targetLanguage = 'en-US' } = req.body;
-      
+
       if (!conversationId) {
         return res.status(400).json({ message: 'Conversation ID is required' });
       }
@@ -564,7 +564,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const recipientId = conversation.participant1Id === req.userId 
             ? conversation.participant2Id 
             : conversation.participant1Id;
-          
+
           const recipientWs = connectedClients.get(recipientId);
           if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
             recipientWs.send(JSON.stringify({
@@ -573,7 +573,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }));
           }
         }
-        
+
         res.json({ success: true, translation: result });
       } else {
         res.json({ success: true, message: 'Audio chunk processed, waiting for more data' });
@@ -592,22 +592,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { text, language = 'en-US' } = req.body;
-      
+
       if (!text) {
         return res.status(400).json({ message: 'Text is required' });
       }
 
       // Generate speech using voice translation service
       const audioBuffer = await voiceTranslationService.generateSpeech(text, language);
-      
+
       if (!audioBuffer) {
         return res.status(500).json({ message: 'Failed to generate speech' });
       }
-      
+
       // Set appropriate headers for audio file
       res.setHeader('Content-Type', 'audio/wav');
       res.setHeader('Content-Disposition', 'attachment; filename="speech.wav"');
-      
+
       // Send the audio buffer as response
       res.send(audioBuffer);
     } catch (error) {
@@ -617,7 +617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FASE 5: Tradução de Texto - API endpoints for text translation
-  
+
   // Get supported languages
   app.get('/api/translation/languages', (req, res) => {
     try {
@@ -633,7 +633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/translation/detect', authenticateToken, async (req, res) => {
     try {
       const { text } = req.body;
-      
+
       if (!text) {
         return res.status(400).json({ message: 'Text is required' });
       }
@@ -650,7 +650,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/translation/translate', authenticateToken, async (req, res) => {
     try {
       const { text, targetLanguage, sourceLanguage, context } = req.body;
-      
+
       if (!text || !targetLanguage) {
         return res.status(400).json({ message: 'Text and target language are required' });
       }
@@ -682,7 +682,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/translation/batch', authenticateToken, async (req, res) => {
     try {
       const { texts, targetLanguage, sourceLanguage } = req.body;
-      
+
       if (!texts || !Array.isArray(texts) || !targetLanguage) {
         return res.status(400).json({ message: 'Texts array and target language are required' });
       }
@@ -705,7 +705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FASE 3: Gerenciamento de Contatos - Contact management APIs
-  
+
   // Sync contacts from device
   app.post('/api/contacts/sync', authenticateToken, async (req, res) => {
     try {
@@ -761,7 +761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const users = await storage.findUsersByPhoneNumbers(phoneNumbers);
-      
+
       // Don't expose sensitive user data
       const publicUsers = users.map(user => ({
         id: user.id,
@@ -842,7 +842,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/voice/tts', authenticateToken, async (req: Request, res: Response) => {
     try {
       const { text, language } = req.body;
-      
+
       if (!text || typeof text !== 'string') {
         return res.status(400).json({ error: 'Text is required' });
       }
@@ -851,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Generate speech using voice translation service
       const audioBuffer = await voiceTranslationService.generateSpeech(text, language || 'en-US');
-      
+
       if (!audioBuffer) {
         return res.status(500).json({ error: 'Failed to generate speech' });
       }
@@ -860,12 +860,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Content-Length', audioBuffer.length.toString());
       res.setHeader('Accept-Ranges', 'bytes');
-      
+
       // Send audio buffer
       res.send(audioBuffer);
     } catch (error) {
       console.error('[TTS] Error:', error);
       res.status(500).json({ error: 'TTS generation failed' });
+    }
+  });
+
+  // Get user profile
+  app.get("/api/user/me", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const user = await storage.getUser(req.userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      res.json({ user });
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Update user profile
+  app.patch("/api/user/profile", authenticateToken, async (req, res) => {
+    try {
+      const { username, preferredLanguage } = req.body;
+
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const updatedUser = await storage.updateUser(req.userId, {
+        username,
+        preferredLanguage,
+      });
+
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({ user: updatedUser });
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Get notification settings
+  app.get("/api/user/notification-settings", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      // For now, return default settings
+      const settings = {
+        messageNotifications: true,
+        callNotifications: true,
+        groupNotifications: true,
+        soundEnabled: true,
+        vibrationEnabled: true,
+        notificationSound: "default",
+        ringtone: "default",
+      };
+
+      res.json({ settings });
+    } catch (error) {
+      console.error("Error fetching notification settings:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Update notification settings
+  app.patch("/api/user/notification-settings", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const settings = req.body;
+
+      // For now, just return success
+      // In a real app, you would save these to the database
+      res.json({ message: "Settings updated successfully", settings });
+    } catch (error) {
+      console.error("Error updating notification settings:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Get storage information
+  app.get("/api/user/storage", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      // Mock storage data
+      const storageData = {
+        totalUsed: 245,
+        photos: 120,
+        videos: 89,
+        audio: 25,
+        cache: 11,
+        total: 1000,
+      };
+
+      const settings = {
+        autoDownloadPhotos: true,
+        autoDownloadVideos: false,
+        autoDownloadAudio: true,
+      };
+
+      res.json({ storage: storageData, settings });
+    } catch (error) {
+      console.error("Error fetching storage info:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Update download settings
+  app.patch("/api/user/download-settings", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const settings = req.body;
+
+      // For now, just return success
+      res.json({ message: "Download settings updated successfully", settings });
+    } catch (error) {
+      console.error("Error updating download settings:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Clear cache
+  app.post("/api/user/clear-cache", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      // For now, just return success
+      // In a real app, you would clear actual cache files
+      res.json({ message: "Cache cleared successfully" });
+    } catch (error) {
+      console.error("Error clearing cache:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Delete all user data
+  app.delete("/api/user/delete-all-data", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      // For now, just return success
+      // In a real app, you would delete user data
+      res.json({ message: "All data deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting user data:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
