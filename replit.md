@@ -77,8 +77,8 @@ The application follows a fullstack TypeScript architecture with clear separatio
 ### Integrations Implemented
 - ✅ **Groq API**: Ultra-fast text translation with llama-3.3-70b-versatile model
 - ✅ **OpenAI Whisper**: Speech-to-text transcription for voice translation
+- ✅ **OpenAI TTS**: Text-to-speech synthesis for voice translation playback
 - ⚠️ SMS service for OTP delivery (placeholder implementation)
-- 🚧 Text-to-speech service (Coqui TTS - placeholder for future implementation)
 
 ## Deployment Strategy
 
@@ -114,13 +114,18 @@ The build process creates a single Express server that serves both the API and s
 - ✅ Suporte para 10+ idiomas (Português, Inglês, Espanhol, Francês, etc.)
 - ✅ Exibição de texto original e traduzido nas mensagens
 
-### Fase 7: Tradução de Voz ✅
+### Fase 7: Tradução de Voz ✅ (COMPLETA)
 - ✅ Integração Whisper STT com OpenAI para transcrição de áudio
-- ✅ Pipeline completo: Whisper → Groq Translation → TTS
+- ✅ Pipeline completo: Whisper → Groq Translation → OpenAI TTS
 - ✅ Processamento de chunks de áudio em tempo real (3 segundos)
 - ✅ Interface de chamada de voz com traduções ao vivo
 - ✅ WebSocket para broadcasting de traduções entre participantes
 - ✅ Status de tradução e indicadores visuais durante chamadas
+- ✅ Sistema TTS integrado com OpenAI para reprodução de áudio traduzido
+- ✅ Suporte a 50+ idiomas com vozes específicas por idioma
+- ✅ Detecção automática de voz e processamento inteligente de chunks
+- ✅ API endpoint `/api/voice/tts` para geração de áudio
+- ✅ Sistema de reprodução automática de traduções em tempo real
 
 ### Funcionalidades Implementadas
 - ✅ Core messaging application fully functional
@@ -152,6 +157,17 @@ The build process creates a single Express server that serves both the API and s
 - ✅ Sistema de busca e descoberta de usuários por número de telefone
 - ✅ Integração completa com backend para gerenciamento de contatos
 - ✅ Sincronização de contatos do dispositivo (simulada para web)
+- ✅ Correção de bug crítico na tela de contatos (toLowerCase em campo undefined)
+
+### Implementação Completa Fase 7 - Tradução de Voz (Janeiro 2025) - NOVO
+- ✅ Substituição completa do Coqui TTS por OpenAI TTS para maior confiabilidade
+- ✅ Implementação do endpoint `/api/voice/tts` para geração de áudio
+- ✅ Sistema de reprodução automática de traduções em tempo real
+- ✅ Mapeamento extensivo de idiomas para vozes OpenAI (50+ idiomas)
+- ✅ Integração completa no hook `use-voice-translation` com TTS
+- ✅ Interface de chamada de voz aprimorada com indicadores de tradução
+- ✅ Sistema de detecção de voz e processamento inteligente de chunks
+- ✅ Pipeline completo: Whisper STT → Groq Translation → OpenAI TTS
 
 ### Implementação Groq API (Fases 5 e 7)
 - ✅ Criado serviço `groqTranslationService` com suporte a tradução de texto

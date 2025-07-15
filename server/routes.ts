@@ -782,5 +782,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TTS (Text-to-Speech) endpoint
+  app.post('/api/voice/tts', authenticateToken, async (req: Request, res: Response) => {
+    try {
+      const { text, language } = req.body;
+      
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'Text is required' });
+      }
+
+      console.log('[TTS] Generating speech for:', text, 'in', language);
+
+      // Generate speech using voice translation service
+      const audioBuffer = await voiceTranslationService.generateSpeech(text, language || 'en-US');
+      
+      if (!audioBuffer) {
+        return res.status(500).json({ error: 'Failed to generate speech' });
+      }
+
+      // Set appropriate headers for audio response
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', audioBuffer.length.toString());
+      res.setHeader('Accept-Ranges', 'bytes');
+      
+      // Send audio buffer
+      res.send(audioBuffer);
+    } catch (error) {
+      console.error('[TTS] Error:', error);
+      res.status(500).json({ error: 'TTS generation failed' });
+    }
+  });
+
   return httpServer;
 }
