@@ -40,7 +40,7 @@ interface IStorage {
 
   // Contact methods
   getUserContacts(userId: number): Promise<any[]>;
-  addContact(userId: number, contactUserId: number): Promise<Contact>;
+  addContact(userId: number, contactUserId: number, contactName?: string, phoneNumber?: string): Promise<Contact>;
   syncContacts(userId: number, contacts: Array<{name: string, phoneNumber: string}>): Promise<ContactSyncSession>;
   findUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[]>;
   updateContactNickname(contactId: number, nickname: string): Promise<Contact>;
@@ -153,10 +153,22 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async addContact(userId: number, contactUserId: number): Promise<Contact> {
+  async addContact(userId: number, contactUserId: number, contactName?: string, phoneNumber?: string): Promise<Contact> {
+    // Get the contact user's information if name/phone not provided
+    const contactUser = await this.getUser(contactUserId);
+    if (!contactUser) {
+      throw new Error('Contact user not found');
+    }
+    
     const [contact] = await db
       .insert(contacts)
-      .values({ userId, contactUserId })
+      .values({ 
+        userId, 
+        contactUserId,
+        contactName: contactName || contactUser.username || contactUser.phoneNumber,
+        phoneNumber: phoneNumber || contactUser.phoneNumber,
+        isRegistered: true
+      })
       .returning();
     return contact;
   }

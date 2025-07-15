@@ -301,7 +301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'Unauthorized' });
       }
 
-      const contact = await storage.addContact(req.userId, contactUser.id);
+      const contact = await storage.addContact(req.userId, contactUser.id, contactUser.username, contactUser.phoneNumber);
       res.json({ contact });
     } catch (error) {
       console.error('Add contact error:', error);
@@ -322,7 +322,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'Unauthorized' });
       }
 
-      const contact = await storage.addContact(req.userId, contactUserId);
+      // Get the contact user's information first
+      const contactUser = await storage.getUser(contactUserId);
+      if (!contactUser) {
+        return res.status(404).json({ message: 'Contact user not found' });
+      }
+      
+      const contact = await storage.addContact(req.userId, contactUserId, contactUser.username, contactUser.phoneNumber);
       res.json({ contact });
     } catch (error) {
       console.error('Add contact by user ID error:', error);
