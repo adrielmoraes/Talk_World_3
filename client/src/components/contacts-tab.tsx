@@ -50,10 +50,10 @@ export default function ContactsTab() {
 
   // Filter contacts based on search
   const filteredContacts = contacts.filter(contact =>
-    contact.contactName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.phoneNumber.includes(searchQuery) ||
+    contact.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    contact.phoneNumber?.includes(searchQuery) ||
     contact.nickname?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.contactUser?.username.toLowerCase().includes(searchQuery.toLowerCase())
+    contact.contactUser?.username?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const registeredContacts = filteredContacts.filter(c => c.isRegistered);

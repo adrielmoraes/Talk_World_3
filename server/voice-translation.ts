@@ -193,57 +193,112 @@ export class VoiceTranslationService {
 
 
   /**
-   * Generate speech from text using Coqui TTS
+   * Generate speech from text using OpenAI TTS
    */
   async generateSpeech(text: string, language: string = 'en-US'): Promise<Buffer | null> {
     try {
-      // Call Coqui TTS server API
-      console.log('[VoiceTranslation] TTS requested for:', text, 'in language:', language);
+      console.log(`[VoiceTranslation] Generating speech for: "${text}" in ${language}`);
       
-      // Get the Coqui TTS server URL from environment variables or use default
-      const coquiServerUrl = process.env.COQUI_TTS_SERVER_URL || 'http://localhost:5002';
-      
-      // Map language codes to Coqui TTS compatible language IDs
-      const languageMap: Record<string, string> = {
-        'en-US': 'en',
-        'pt-BR': 'pt',
-        'es-ES': 'es',
-        'fr-FR': 'fr',
-        'de-DE': 'de',
-        'it-IT': 'it',
-        'ja-JP': 'ja',
-        'zh-CN': 'zh-cn',
-        'ru-RU': 'ru',
-        'ko-KR': 'ko',
-        // Add more language mappings as needed
+      // Map language codes to OpenAI TTS voices
+      const voiceMap: { [key: string]: string } = {
+        'en-US': 'alloy',
+        'en-GB': 'echo',
+        'es-ES': 'fable',
+        'fr-FR': 'onyx',
+        'de-DE': 'nova',
+        'it-IT': 'shimmer',
+        'pt-BR': 'alloy',
+        'pt-PT': 'alloy',
+        'ja-JP': 'echo',
+        'ko-KR': 'fable',
+        'zh-CN': 'onyx',
+        'ru-RU': 'nova',
+        'ar-SA': 'shimmer',
+        'hi-IN': 'alloy',
+        'th-TH': 'echo',
+        'vi-VN': 'fable',
+        'tr-TR': 'onyx',
+        'pl-PL': 'nova',
+        'nl-NL': 'shimmer',
+        'sv-SE': 'alloy',
+        'da-DK': 'echo',
+        'fi-FI': 'fable',
+        'no-NO': 'onyx',
+        'cs-CZ': 'nova',
+        'hu-HU': 'shimmer',
+        'ro-RO': 'alloy',
+        'uk-UA': 'echo',
+        'he-IL': 'fable',
+        'fa-IR': 'onyx',
+        'ur-PK': 'nova',
+        'bn-BD': 'shimmer',
+        'ta-IN': 'alloy',
+        'te-IN': 'echo',
+        'ml-IN': 'fable',
+        'kn-IN': 'onyx',
+        'gu-IN': 'nova',
+        'pa-IN': 'shimmer',
+        'ne-NP': 'alloy',
+        'si-LK': 'echo',
+        'my-MM': 'fable',
+        'km-KH': 'onyx',
+        'lo-LA': 'nova',
+        'ka-GE': 'shimmer',
+        'am-ET': 'alloy',
+        'sw-KE': 'echo',
+        'zu-ZA': 'fable',
+        'af-ZA': 'onyx',
+        'ms-MY': 'nova',
+        'tl-PH': 'shimmer',
+        'id-ID': 'alloy',
+        'jv-ID': 'echo',
+        'haw-US': 'fable',
+        'mi-NZ': 'onyx',
+        'cy-GB': 'nova',
+        'ga-IE': 'shimmer',
+        'mt-MT': 'alloy',
+        'is-IS': 'echo',
+        'fo-FO': 'fable',
+        'kl-GL': 'onyx',
+        'eu-ES': 'nova',
+        'ca-ES': 'shimmer',
+        'gl-ES': 'alloy',
+        'ast-ES': 'echo',
+        'co-FR': 'fable',
+        'br-FR': 'onyx',
+        'oc-FR': 'nova',
+        'rm-CH': 'shimmer',
+        'lb-LU': 'alloy',
+        'li-NL': 'echo',
+        'fy-NL': 'fable',
+        'nds-DE': 'onyx',
+        'hsb-DE': 'nova',
+        'dsb-DE': 'shimmer',
+        'yi-US': 'alloy',
+        'la-VA': 'echo',
+        'eo-001': 'fable',
+        'ia-001': 'onyx',
+        'vo-001': 'nova'
       };
       
-      const languageId = languageMap[language] || 'en';
+      const voice = voiceMap[language] || 'alloy';
       
-      // Prepare the URL with query parameters
-      const url = new URL(`${coquiServerUrl}/api/tts`);
-      url.searchParams.append('text', text);
-      url.searchParams.append('language_id', languageId);
-      
-      // Make the request to Coqui TTS server
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Accept': 'audio/wav',
-        },
+      // Generate audio using OpenAI TTS
+      const mp3Response = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: voice as any,
+        input: text,
+        response_format: 'mp3',
+        speed: 1.0
       });
       
-      if (!response.ok) {
-        throw new Error(`Coqui TTS server responded with status: ${response.status}`);
-      }
+      // Convert to buffer
+      const buffer = Buffer.from(await mp3Response.arrayBuffer());
       
-      // Get the audio data as ArrayBuffer and convert to Buffer
-      const audioArrayBuffer = await response.arrayBuffer();
-      const audioBuffer = Buffer.from(audioArrayBuffer);
-      
-      return audioBuffer;
+      console.log(`[VoiceTranslation] Generated ${buffer.length} bytes of audio`);
+      return buffer;
     } catch (error) {
-      console.error('[VoiceTranslation] TTS generation error:', error);
+      console.error('[VoiceTranslation] Error generating speech:', error);
       return null;
     }
   }

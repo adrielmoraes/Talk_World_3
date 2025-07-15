@@ -37,6 +37,7 @@ export function useVoiceTranslation({
   const SILENCE_THRESHOLD = 0.01;
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Initialize audio context for voice activity detection
   const initializeAudioContext = useCallback(async () => {
@@ -182,7 +183,13 @@ export function useVoiceTranslation({
       if (response.ok) {
         const result = await response.json();
         if (result.translation) {
-          setTranslations(prev => [...prev, result.translation]);
+          const translation = result.translation;
+          setTranslations(prev => [...prev, translation]);
+          
+          // Generate and play TTS for translated text
+          if (translation.translatedText && translation.translatedText.trim().length > 0) {
+            generateAndPlaySpeech(translation.translatedText, translation.targetLanguage);
+          }
         }
       }
     } catch (error) {
@@ -191,6 +198,47 @@ export function useVoiceTranslation({
       setIsProcessing(false);
     }
   }, [conversationId, targetLanguage, isProcessing]);
+
+  // Generate and play speech using TTS
+  const generateAndPlaySpeech = useCallback(async (text: string, language: string) => {
+    try {
+      console.log('[VoiceTranslation] Generating speech for:', text, 'in', language);
+      
+      const response = await fetch('/api/voice/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({
+          text: text,
+          language: language,
+        }),
+      });
+
+      if (response.ok) {
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Create audio element if it doesn't exist
+        if (!audioRef.current) {
+          audioRef.current = new Audio();
+        }
+        
+        audioRef.current.src = audioUrl;
+        audioRef.current.play().catch(error => {
+          console.error('[VoiceTranslation] Audio playback error:', error);
+        });
+        
+        // Clean up URL after playback
+        audioRef.current.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+        };
+      }
+    } catch (error) {
+      console.error('[VoiceTranslation] TTS error:', error);
+    }
+  }, []);
 
   // Stop recording
   const stopRecording = useCallback(() => {
