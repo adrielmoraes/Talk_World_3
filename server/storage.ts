@@ -22,7 +22,7 @@ import {
   type InsertCall
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, desc, inArray } from "drizzle-orm";
+import { eq, and, or, desc, inArray, ne } from "drizzle-orm";
 
 // Storage interface
 interface IStorage {
@@ -118,7 +118,7 @@ export class DatabaseStorage implements IStorage {
           eq(otpCodes.isUsed, false)
         )
       );
-    
+
     if (otp && new Date() < otp.expiresAt) {
       return otp;
     }
@@ -149,7 +149,7 @@ export class DatabaseStorage implements IStorage {
       .from(contacts)
       .innerJoin(users, eq(contacts.contactUserId, users.id))
       .where(eq(contacts.userId, userId));
-    
+
     return result;
   }
 
@@ -159,7 +159,7 @@ export class DatabaseStorage implements IStorage {
     if (!contactUser) {
       throw new Error('Contact user not found');
     }
-    
+
     const [contact] = await db
       .insert(contacts)
       .values({ 
@@ -199,7 +199,7 @@ export class DatabaseStorage implements IStorage {
       for (const deviceContact of deviceContacts) {
         const registeredUser = registeredPhoneMap.get(deviceContact.phoneNumber);
         const isRegistered = !!registeredUser;
-        
+
         if (isRegistered) {
           registeredCount++;
         }
@@ -257,14 +257,14 @@ export class DatabaseStorage implements IStorage {
           completedAt: new Date(),
         })
         .where(eq(contactSyncSessions.id, syncSession.id));
-      
+
       throw error;
     }
   }
 
   async findUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[]> {
     if (phoneNumbers.length === 0) return [];
-    
+
     return await db
       .select()
       .from(users)
@@ -322,13 +322,43 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(desc(conversations.updatedAt));
-    
+
     return result;
   }
 
-  async getConversationById(id: number): Promise<Conversation | undefined> {
-    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, id));
-    return conversation || undefined;
+  async getConversationById(conversationId: number, userId: number) {
+    const conversation = await db
+      .select({
+        id: conversations.id,
+        translationEnabled: conversations.translationEnabled,
+        createdAt: conversations.createdAt,
+        updatedAt: conversations.updatedAt,
+        otherUser: {
+          id: users.id,
+          username: users.username,
+          profilePhoto: users.profilePhoto,
+          isVerified: users.isVerified,
+        },
+      })
+      .from(conversations)
+      .innerJoin(users, 
+        or(
+          and(eq(conversations.participant1Id, userId), eq(users.id, conversations.participant2Id)),
+          and(eq(conversations.participant2Id, userId), eq(users.id, conversations.participant1Id))
+        )
+      )
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          or(
+            eq(conversations.participant1Id, userId),
+            eq(conversations.participant2Id, userId)
+          )
+        )
+      )
+      .limit(1);
+
+    return conversation[0] || null;
   }
 
   async getConversationByParticipants(user1Id: number, user2Id: number): Promise<Conversation | undefined> {
@@ -350,6 +380,19 @@ export class DatabaseStorage implements IStorage {
       .values(insertConversation)
       .returning();
     return conversation;
+  }
+
+  async markMessagesAsRead(conversationId: number, userId: number) {
+    await db
+      .update(messages)
+      .set({ isRead: true })
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          ne(messages.senderId, userId),
+          eq(messages.isRead, false)
+        )
+      );
   }
 
   async updateConversationTranslation(id: number, enabled: boolean): Promise<Conversation> {
@@ -391,7 +434,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(users, eq(messages.senderId, users.id))
       .where(eq(messages.conversationId, conversationId))
       .orderBy(messages.createdAt);
-    
+
     return result;
   }
 
@@ -422,7 +465,7 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(desc(calls.startedAt));
-    
+
     return result;
   }
 

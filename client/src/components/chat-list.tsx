@@ -22,8 +22,9 @@ export default function ChatList() {
   });
 
   const handleNewChat = () => {
-    // For now, just switch to contacts tab to select someone to chat with
+    // Switch to contacts tab to select someone to chat with
     setLocation("/app?tab=contacts");
+    setShowNewChatDialog(false);
   };
 
   const openChat = (conversationId: number) => {
@@ -171,8 +172,16 @@ export default function ChatList() {
               Nenhuma conversa ainda
             </h3>
             <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
-              Toque no botão abaixo para iniciar uma nova conversa
+              Inicie uma nova conversa selecionando um contato
             </p>
+            <Button
+              onClick={handleNewChat}
+              variant="outline"
+              className="mb-4"
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Nova Conversa
+            </Button>
           </div>
         )}
       </div>

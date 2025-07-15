@@ -59,10 +59,29 @@ export default function ContactsTab() {
   const registeredContacts = filteredContacts.filter(c => c.isRegistered);
   const unregisteredContacts = filteredContacts.filter(c => !c.isRegistered);
 
-  const startChat = (contact: any) => {
+  const startChat = async (contact: any) => {
     if (contact.isRegistered && contact.contactUserId) {
-      // Find or create conversation with this user
-      setLocation(`/chat/${contact.contactUserId}`);
+      try {
+        // Create or get existing conversation
+        const token = localStorage.getItem("token");
+        const response = await fetch("/api/conversations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({ contactUserId: contact.contactUserId }),
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to create conversation");
+        }
+        
+        const { conversation } = await response.json();
+        setLocation(`/chat/${conversation.id}`);
+      } catch (error) {
+        console.error("Error creating conversation:", error);
+      }
     }
   };
 
