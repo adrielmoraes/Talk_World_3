@@ -207,7 +207,7 @@ export default function ChatScreen() {
   return (
     <div className="h-screen bg-white dark:bg-whatsapp-dark flex flex-col">
       {/* Chat Header */}
-      <div className="bg-whatsapp-secondary text-white p-4 flex items-center justify-between"></div>
+      <div className="bg-whatsapp-secondary text-white p-4 flex items-center justify-between">
         <div className="flex items-center">
           <button onClick={goBack} className="mr-3">
             <ArrowLeft className="h-6 w-6" />
