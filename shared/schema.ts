@@ -202,3 +202,39 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Call = typeof calls.$inferSelect;
 export type InsertCall = z.infer<typeof insertCallSchema>;
+export const selectCallSchema = createSelectSchema(calls);
+
+// Notification Settings
+export const notificationSettings = pgTable('notification_settings', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  messageNotifications: boolean('message_notifications').default(true),
+  callNotifications: boolean('call_notifications').default(true),
+  groupNotifications: boolean('group_notifications').default(true),
+  soundEnabled: boolean('sound_enabled').default(true),
+  vibrationEnabled: boolean('vibration_enabled').default(true),
+  notificationSound: text('notification_sound').default('default'),
+  ringtone: text('ringtone').default('default'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// User Storage Data
+export const userStorageData = pgTable('user_storage_data', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  totalUsed: integer('total_used').default(0), // in MB
+  photos: integer('photos').default(0),
+  videos: integer('videos').default(0),
+  audio: integer('audio').default(0),
+  cache: integer('cache').default(0),
+  autoDownloadPhotos: boolean('auto_download_photos').default(true),
+  autoDownloadVideos: boolean('auto_download_videos').default(false),
+  autoDownloadAudio: boolean('auto_download_audio').default(true),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const insertNotificationSettingsSchema = createInsertSchema(notificationSettings);
+export const selectNotificationSettingsSchema = createSelectSchema(notificationSettings);
+export const insertUserStorageDataSchema = createInsertSchema(userStorageData);
+export const selectUserStorageDataSchema = createSelectSchema(userStorageData);
