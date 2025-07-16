@@ -487,7 +487,17 @@ export class DatabaseStorage implements IStorage {
 
   async getUnreadMessages(conversationId: number, userId: number): Promise<any[]> {
     const result = await db
-      .select()
+      .select({
+        id: messages.id,
+        senderId: messages.senderId,
+        conversationId: messages.conversationId,
+        originalText: messages.originalText,
+        translatedText: messages.translatedText,
+        targetLanguage: messages.targetLanguage,
+        isDelivered: messages.isDelivered,
+        isRead: messages.isRead,
+        createdAt: messages.createdAt,
+      })
       .from(messages)
       .where(
         and(
@@ -587,7 +597,13 @@ export class DatabaseStorage implements IStorage {
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
     const [message] = await db
       .insert(messages)
-      .values(insertMessage)
+      .values({
+        conversationId: insertMessage.conversationId,
+        senderId: insertMessage.senderId,
+        originalText: insertMessage.originalText,
+        translatedText: insertMessage.translatedText,
+        targetLanguage: insertMessage.targetLanguage,
+      })
       .returning();
     return message;
   }
