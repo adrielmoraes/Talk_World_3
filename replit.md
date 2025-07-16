@@ -93,7 +93,7 @@ The build process creates a single Express server that serves both the API and s
 
 ## Current Status
 
-**Version 2.0 - Contact Management Complete (Janeiro 2025)**
+**Version 2.1 - Fases 4 e 5 Confirmadas e Otimizadas (Janeiro 2025)**
 
 ### Fase 3: Gerenciamento de Contatos ✅ (NOVO)
 - ✅ Schema de banco PostgreSQL atualizado com tabelas de contatos
@@ -127,13 +127,33 @@ The build process creates a single Express server that serves both the API and s
 - ✅ API endpoint `/api/voice/tts` para geração de áudio
 - ✅ Sistema de reprodução automática de traduções em tempo real
 
+### Fase 4: Mensagens de Texto (Core) ✅ (CONFIRMADA)
+- ✅ WebSocket Server com autenticação JWT completa
+- ✅ Mapa de clientes conectados em tempo real
+- ✅ Sistema de envio/recebimento de mensagens individuais
+- ✅ Lista de Chats com busca, filtros e estado unread
+- ✅ Tela de Chat Individual com bolhas estilo WhatsApp
+- ✅ Interface responsiva com avatars e status online
+- ✅ Sistema de invalidação de cache para UI reativa
+
+### Fase 5: Tradução de Texto ✅ (CONFIRMADA)
+- ✅ Integração Groq API (llama-3.3-70b-versatile) - superior ao Deep-Translator
+- ✅ Tradução automática baseada no idioma preferido do destinatário
+- ✅ Fluxo de mensagens com tradução opcional integrada
+- ✅ UI com painel de controle de tradução expansível
+- ✅ Switch de ativação/desativação por conversa
+- ✅ Exibição simultânea de texto original e traduzido
+- ✅ Seletor de idioma com bandeiras e nomes
+- ✅ Indicadores visuais de status de tradução em tempo real
+
 ### Funcionalidades Implementadas
-- ✅ Core messaging application fully functional
+- ✅ **Core messaging application com WebSocket** (FASE 4)
+- ✅ **Sistema de tradução de texto Groq API** (FASE 5)
 - ✅ Phone authentication with OTP verification working
 - ✅ Real-time WebSocket messaging implemented
-- ✅ **Advanced contact management with device sync** (NOVO)
-- ✅ **Phone number lookup and user discovery** (NOVO)
-- ✅ **Contact categorization (registered vs unregistered)** (NOVO)
+- ✅ **Advanced contact management with device sync**
+- ✅ **Phone number lookup and user discovery**
+- ✅ **Contact categorization (registered vs unregistered)**
 - ✅ Voice calling interface complete
 - ✅ **Groq API translation service with real-time performance**
 - ✅ **Text translation with context awareness**
@@ -172,6 +192,14 @@ The build process creates a single Express server that serves both the API and s
 - ✅ Sistema de detecção de voz e processamento inteligente de chunks
 - ✅ Pipeline completo: Whisper STT → Groq Translation → Coqui TTS → OpenAI TTS (fallback)
 - ✅ Documentação completa do Coqui TTS em `README-COQUI-TTS.md`
+
+### Confirmação e Otimização Fases 4 e 5 (Janeiro 2025) - NOVO
+- ✅ **Fase 4 confirmada funcionando**: WebSocket bidireacional, lista de chats, UI completa
+- ✅ **Fase 5 confirmada funcionando**: Tradução Groq API integrada ao fluxo de mensagens
+- ✅ Sistema de tradução automática baseado no idioma do destinatário
+- ✅ Interface de tradução com controles avançados e indicadores visuais
+- ✅ Armazenamento de texto original e traduzido no banco de dados
+- ✅ WebSocket com tradução inteligente em tempo real
 
 ### Implementação Groq API (Fases 5 e 7)
 - ✅ Criado serviço `groqTranslationService` com suporte a tradução de texto
