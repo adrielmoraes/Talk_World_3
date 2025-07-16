@@ -574,6 +574,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(messages.conversationId, conversationId))
       .orderBy(messages.createdAt);
 
+    console.log(`[Storage] Found ${result.length} messages for conversation ${conversationId}`);
     return result;
   }
 

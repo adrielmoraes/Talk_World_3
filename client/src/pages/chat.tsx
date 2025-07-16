@@ -221,7 +221,7 @@ export default function ChatScreen() {
                     : "bg-white dark:bg-whatsapp-elevated"
                 }`}>
                   <div className="text-sm text-gray-800 dark:text-white mb-1">
-                    {message.originalText}
+                    {message.originalText || message.text}
                   </div>
                   
                   {message.translatedText && message.translatedText !== message.originalText && (

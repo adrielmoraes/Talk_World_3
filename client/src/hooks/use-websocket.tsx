@@ -49,11 +49,15 @@ export function useWebSocket() {
             break;
             
           case "new_message":
+            console.log("Received new_message, invalidating queries for conversation:", message.message.conversationId);
             // Invalidate conversations and messages queries to refresh UI
             queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
             queryClient.invalidateQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString(), "messages"] });
             // Also refresh the specific conversation to update last message
             queryClient.invalidateQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString()] });
+            
+            // Force refetch with more aggressive cache invalidation
+            queryClient.refetchQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString(), "messages"] });
             break;
             
           case "incoming_call":
