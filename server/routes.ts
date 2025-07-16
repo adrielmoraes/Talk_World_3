@@ -124,12 +124,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ws.send(JSON.stringify(messageData));
             console.log('[WebSocket] Message sent to sender');
 
-            // Send to recipient if online
+            // Send to recipient if online and mark as delivered
             console.log('[WebSocket] Sending to recipient:', recipientId);
             const recipientWs = connectedClients.get(recipientId);
             if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
               console.log('[WebSocket] Recipient WebSocket found and open');
-              recipientWs.send(JSON.stringify(messageData));
+              
+              // Mark message as delivered
+              await storage.markMessageAsDelivered(newMessage.id);
+              
+              // Update message data with delivery status
+              const updatedMessage = { ...newMessage, isDelivered: true, deliveredAt: new Date() };
+              
+              recipientWs.send(JSON.stringify({
+                type: 'new_message',
+                message: updatedMessage,
+              }));
+              
+              // Notify sender about delivery
+              ws.send(JSON.stringify({
+                type: 'message_delivered',
+                messageId: newMessage.id,
+                deliveredAt: new Date(),
+              }));
             } else {
               console.log('[WebSocket] Recipient WebSocket not found or closed');
             }
@@ -492,7 +509,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const conversationId = parseInt(req.params.id);
+      
+      // Get unread messages before marking as read
+      const unreadMessages = await storage.getUnreadMessages(conversationId, req.userId);
+      
       await storage.markMessagesAsRead(conversationId, req.userId);
+      
+      // Notify senders about read status
+      for (const message of unreadMessages) {
+        const senderWs = connectedClients.get(message.senderId);
+        if (senderWs && senderWs.readyState === WebSocket.OPEN) {
+          senderWs.send(JSON.stringify({
+            type: 'message_read',
+            messageId: message.id,
+            readAt: new Date(),
+            conversationId: conversationId,
+          }));
+        }
+      }
+      
       res.json({ success: true });
     } catch (error) {
       console.error('Mark as read error:', error);

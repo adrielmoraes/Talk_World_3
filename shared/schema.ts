@@ -65,6 +65,8 @@ export const messages = pgTable("messages", {
   targetLanguage: text("target_language"),
   isDelivered: boolean("is_delivered").notNull().default(false),
   isRead: boolean("is_read").notNull().default(false),
+  deliveredAt: timestamp("delivered_at"),
+  readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

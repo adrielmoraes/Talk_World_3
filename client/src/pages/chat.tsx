@@ -262,8 +262,20 @@ export default function ChatScreen() {
                       })}
                     </span>
                     {isOwn && (
-                      <div className="text-xs">
-                        {message.isRead ? "✓✓" : "✓"}
+                      <div className="text-xs flex items-center">
+                        {message.isRead ? (
+                          <span className="text-blue-500" title={`Lida ${message.readAt ? new Date(message.readAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}`}>
+                            ✓✓
+                          </span>
+                        ) : message.isDelivered ? (
+                          <span className="text-gray-600 dark:text-gray-400" title={`Entregue ${message.deliveredAt ? new Date(message.deliveredAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}`}>
+                            ✓✓
+                          </span>
+                        ) : (
+                          <span className="text-gray-400" title="Enviada">
+                            ✓
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

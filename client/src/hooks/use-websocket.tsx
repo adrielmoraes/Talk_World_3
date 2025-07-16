@@ -19,13 +19,13 @@ export function useWebSocket() {
   const connect = useCallback((token: string) => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
+
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
       console.log("WebSocket connected");
       isConnectedRef.current = true;
-      
+
       // Send authentication
       if (ws.current) {
         ws.current.send(JSON.stringify({
@@ -38,38 +38,60 @@ export function useWebSocket() {
     ws.current.onmessage = (event) => {
       try {
         const message: WebSocketMessage = JSON.parse(event.data);
-        
+
         switch (message.type) {
           case "auth_success":
             console.log("WebSocket authenticated");
             break;
-            
+
           case "auth_error":
             console.error("WebSocket authentication failed:", message.message);
             break;
-            
+
           case "new_message":
-            console.log("Received new_message, invalidating queries for conversation:", message.message.conversationId);
-            // Invalidate conversations and messages queries to refresh UI
+            // Invalidate conversations and messages queries to refresh the UI
             queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString(), "messages"] });
-            // Also refresh the specific conversation to update last message
-            queryClient.invalidateQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString()] });
-            
-            // Force refetch with more aggressive cache invalidation
-            queryClient.refetchQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString(), "messages"] });
+
+            // If the message is for the current conversation, also invalidate messages
+            if (message.message?.conversationId) {
+              queryClient.invalidateQueries({ 
+                queryKey: ["/api/conversations", message.message.conversationId.toString(), "messages"] 
+              });
+            }
             break;
-            
+
+          case 'message_delivered':
+            // Update message delivery status
+            if (message.messageId) {
+              queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+              // Invalidate messages for all conversations to update delivery status
+              queryClient.invalidateQueries({ 
+                queryKey: ["/api/conversations", undefined, "messages"] 
+              });
+            }
+            break;
+
+          case 'message_read':
+            // Update message read status
+            if (message.messageId) {
+              queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+              // Invalidate messages for all conversations to update read status
+              queryClient.invalidateQueries({ 
+                queryKey: ["/api/conversations", undefined, "messages"] 
+              });
+            }
+            break;
+
           case "incoming_call":
             // Handle incoming call notification
             console.log("Incoming call:", message.call);
             break;
-            
+
           case "webrtc_signal":
             // Handle WebRTC signaling
             console.log("WebRTC signal:", message.signal);
             break;
-            
+
           default:
             console.log("Unknown message type:", message.type);
         }
@@ -81,7 +103,7 @@ export function useWebSocket() {
     ws.current.onclose = () => {
       console.log("WebSocket disconnected");
       isConnectedRef.current = false;
-      
+
       // Attempt to reconnect after 3 seconds
       reconnectTimeoutRef.current = setTimeout(() => {
         if (!isConnectedRef.current) {
@@ -99,7 +121,7 @@ export function useWebSocket() {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
-    
+
     if (ws.current) {
       isConnectedRef.current = false;
       ws.current.close();
@@ -111,7 +133,7 @@ export function useWebSocket() {
     console.log('WebSocket sendMessage called with data:', data);
     console.log('WebSocket readyState:', ws.current?.readyState);
     console.log('WebSocket OPEN constant:', WebSocket.OPEN);
-    
+
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       const messageData = {
         type: "send_message",
