@@ -80,8 +80,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             let finalTranslatedText = message.translatedText;
             let finalTargetLanguage = message.targetLanguage;
 
-            // If conversation has translation enabled and recipient has preferred language
-            if (conversation.translationEnabled && recipient?.preferredLanguage) {
+            // Always translate if recipient has preferred language and it's different from original
+            if (recipient?.preferredLanguage) {
               try {
                 // Translate to recipient's preferred language
                 const translation = await groqTranslationService.translateText(
@@ -111,15 +111,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             console.log('[WebSocket] Message created:', newMessage);
 
-            console.log('[WebSocket] Sending to recipient:', recipientId);
+            // Send message to both sender and recipient
+            const messageData = {
+              type: 'new_message',
+              message: newMessage,
+            };
 
+            // Send to sender (for their chat history)
+            ws.send(JSON.stringify(messageData));
+            console.log('[WebSocket] Message sent to sender');
+
+            // Send to recipient if online
+            console.log('[WebSocket] Sending to recipient:', recipientId);
             const recipientWs = connectedClients.get(recipientId);
             if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
               console.log('[WebSocket] Recipient WebSocket found and open');
-              recipientWs.send(JSON.stringify({
-                type: 'new_message',
-                message: newMessage,
-              }));
+              recipientWs.send(JSON.stringify(messageData));
             } else {
               console.log('[WebSocket] Recipient WebSocket not found or closed');
             }
