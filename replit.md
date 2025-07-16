@@ -174,6 +174,14 @@ The build process creates a single Express server that serves both the API and s
 - ✅ **WebSocket com tradução inteligente** - tradução automática baseada no preferredLanguage do usuário destinatário
 - ✅ **Integração Groq API otimizada** - tradução em tempo real durante entrega de mensagens
 
+### Migração de Banco de Dados para Neon (Janeiro 2025) - NOVO
+- ✅ **Migração completa para banco Neon externo via DATABASE_URL**
+- ✅ Limpeza do arquivo .env removendo configurações duplicadas
+- ✅ Verificação de conectividade com banco Neon (9 tabelas criadas)
+- ✅ Dados existentes preservados: 3 usuários, 3 conversas, 7 mensagens
+- ✅ Schema Drizzle sincronizado com banco Neon
+- ✅ Todas operações CRUD funcionando com banco externo
+
 ### Melhorias no Gerenciamento de Contatos (Janeiro 2025) - NOVO
 - ✅ Adicionado funcionalidade de adicionar contatos manualmente
 - ✅ Interface melhorada com diálogo para adicionar contatos por telefone
