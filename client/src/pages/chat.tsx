@@ -177,12 +177,17 @@ export default function ChatScreen() {
           </div>
         </div>
         <div className="flex space-x-4">
-          <button onClick={() => setShowOriginalText(!showOriginalText)}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors dark:hover:bg-whatsapp-elevated"
-                title={showOriginalText ? "Ocultar texto original" : "Mostrar texto original"}
-              >
-                {showOriginalText ? <EyeOff className="h-6 w-6" /> : <Eye className="h-6 w-6" />}
-              </button>
+          <button 
+            onClick={() => setShowOriginalText(!showOriginalText)}
+            className={`p-2 rounded-full transition-colors ${
+              showOriginalText 
+                ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300" 
+                : "hover:bg-gray-100 dark:hover:bg-whatsapp-elevated text-white"
+            }`}
+            title={showOriginalText ? "Ocultar texto original" : "Mostrar texto original"}
+          >
+            {showOriginalText ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+          </button>
           <button onClick={startVoiceCall}>
             <Phone className="h-6 w-6" />
           </button>
@@ -227,14 +232,17 @@ export default function ChatScreen() {
                     ? "bg-whatsapp-light dark:bg-whatsapp-primary dark:bg-opacity-80" 
                     : "bg-white dark:bg-whatsapp-elevated"
                 }`}>
+                  {/* Texto traduzido (principal) */}
                   <div className="text-sm text-gray-800 dark:text-white mb-1">
-                    {message.originalText || message.text}
+                    {message.translatedText || message.originalText || message.text}
                   </div>
 
-                  {message.translatedText && message.translatedText !== message.originalText && (
+                  {/* Texto original (quando ativado e diferente do traduzido) */}
+                  {showOriginalText && message.translatedText && message.originalText && 
+                   message.translatedText !== message.originalText && (
                     <div className="text-sm text-gray-600 dark:text-gray-300 italic border-t border-gray-100 dark:border-gray-600 pt-2 mt-2">
-                      <Languages className="inline h-3 w-3 text-whatsapp-primary mr-1" />
-                      {message.translatedText}
+                      <span className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Texto original:</span>
+                      {message.originalText}
                     </div>
                   )}
 
