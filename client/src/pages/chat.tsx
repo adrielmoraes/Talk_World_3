@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
-import { ArrowLeft, Phone, MoreVertical, Smile, Send, Languages, MessageCircle } from "lucide-react";
+import { ArrowLeft, Phone, MoreVertical, Smile, Send, Languages, MessageCircle, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ export default function ChatScreen() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { sendMessage, connect } = useWebSocket();
-  
+
   // Ensure WebSocket is connected when chat opens
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -44,6 +44,7 @@ export default function ChatScreen() {
     enabled: !!conversationId,
   });
 
+  const [showOriginalText, setShowOriginalText] = useState(false);
 
 
   // Mark messages as read when conversation is opened
@@ -176,6 +177,12 @@ export default function ChatScreen() {
           </div>
         </div>
         <div className="flex space-x-4">
+          <button onClick={() => setShowOriginalText(!showOriginalText)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors dark:hover:bg-whatsapp-elevated"
+                title={showOriginalText ? "Ocultar texto original" : "Mostrar texto original"}
+              >
+                {showOriginalText ? <EyeOff className="h-6 w-6" /> : <Eye className="h-6 w-6" />}
+              </button>
           <button onClick={startVoiceCall}>
             <Phone className="h-6 w-6" />
           </button>
@@ -211,7 +218,7 @@ export default function ChatScreen() {
       >
         {messages?.messages?.map((message: any) => {
           const isOwn = message.senderId === currentUser.id;
-          
+
           return (
             <div key={message.id} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
               <div className="max-w-xs lg:max-w-md">
@@ -223,14 +230,14 @@ export default function ChatScreen() {
                   <div className="text-sm text-gray-800 dark:text-white mb-1">
                     {message.originalText || message.text}
                   </div>
-                  
+
                   {message.translatedText && message.translatedText !== message.originalText && (
                     <div className="text-sm text-gray-600 dark:text-gray-300 italic border-t border-gray-100 dark:border-gray-600 pt-2 mt-2">
                       <Languages className="inline h-3 w-3 text-whatsapp-primary mr-1" />
                       {message.translatedText}
                     </div>
                   )}
-                  
+
                   <div className="flex items-center justify-end space-x-1 mt-1">
                     <span className="text-xs text-gray-600 dark:text-gray-300">
                       {new Date(message.createdAt).toLocaleTimeString('pt-BR', { 
@@ -274,11 +281,11 @@ export default function ChatScreen() {
               </div>
             )}
           </div>
-          
+
           <Button variant="ghost" size="sm">
             <Smile className="h-5 w-5" />
           </Button>
-          
+
           <Button 
             onClick={handleSendMessage}
             disabled={!messageText.trim()}
@@ -287,7 +294,7 @@ export default function ChatScreen() {
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        
+
 
       </div>
     </div>
