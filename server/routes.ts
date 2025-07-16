@@ -50,6 +50,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data.toString());
+        console.log('[WebSocket] Received message:', message);
 
         if (message.type === 'auth') {
           // Authenticate WebSocket connection
@@ -57,6 +58,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const decoded = jwt.verify(message.token, JWT_SECRET) as { userId: number };
             ws.userId = decoded.userId;
             connectedClients.set(decoded.userId, ws);
+            console.log('[WebSocket] User authenticated:', decoded.userId);
+            console.log('[WebSocket] Connected clients:', Array.from(connectedClients.keys()));
             ws.send(JSON.stringify({ type: 'auth_success' }));
           } catch (error) {
             ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid token' }));

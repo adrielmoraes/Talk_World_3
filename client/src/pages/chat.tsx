@@ -16,7 +16,15 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { sendMessage } = useWebSocket();
+  const { sendMessage, connect } = useWebSocket();
+  
+  // Ensure WebSocket is connected when chat opens
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      connect(token);
+    }
+  }, [connect]);
   const { 
     supportedLanguages,
     getLanguageName,
@@ -71,6 +79,12 @@ export default function ChatScreen() {
 
   const handleSendMessage = async () => {
     if (!messageText.trim() || !conversationId) return;
+
+    console.log('handleSendMessage called with:', {
+      conversationId,
+      messageText,
+      parsedConversationId: parseInt(conversationId)
+    });
 
     // Send message without manual translation - backend handles automatic translation
     sendMessage({
