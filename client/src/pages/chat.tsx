@@ -232,17 +232,25 @@ export default function ChatScreen() {
                     ? "bg-whatsapp-light dark:bg-whatsapp-primary dark:bg-opacity-80" 
                     : "bg-white dark:bg-whatsapp-elevated"
                 }`}>
-                  {/* Texto traduzido (principal) */}
+                  {/* Texto principal baseado no usuário */}
                   <div className="text-sm text-gray-800 dark:text-white mb-1">
-                    {message.translatedText || message.originalText || message.text}
+                    {isOwn 
+                      ? (message.originalText || message.text) // Remetente vê original
+                      : (message.translatedText || message.originalText || message.text) // Destinatário vê traduzido
+                    }
                   </div>
 
-                  {/* Texto original (quando ativado e diferente do traduzido) */}
+                  {/* Texto alternativo (quando ativado) */}
                   {showOriginalText && message.translatedText && message.originalText && 
                    message.translatedText !== message.originalText && (
                     <div className="text-sm text-gray-600 dark:text-gray-300 italic border-t border-gray-100 dark:border-gray-600 pt-2 mt-2">
-                      <span className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Texto original:</span>
-                      {message.originalText}
+                      <span className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                        {isOwn ? "Texto traduzido:" : "Texto original:"}
+                      </span>
+                      {isOwn 
+                        ? message.translatedText // Remetente vê tradução quando ativado
+                        : message.originalText   // Destinatário vê original quando ativado
+                      }
                     </div>
                   )}
 
