@@ -449,15 +449,58 @@ export class DatabaseStorage implements IStorage {
     return conversation;
   }
 
-  async markMessagesAsRead(conversationId: number, userId: number) {
+  async markMessagesAsRead(conversationId: number, userId: number): Promise<void> {
+    const readAt = new Date();
     await db
       .update(messages)
-      .set({ isRead: true })
-      .where(and(
-        eq(messages.conversationId, conversationId),
-        ne(messages.senderId, userId),
-        eq(messages.isRead, false)
-      ));
+      .set({ 
+        isRead: true,
+        readAt: readAt,
+      })
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          ne(messages.senderId, userId), // Don't mark own messages as read
+          eq(messages.isRead, false)
+        )
+      );
+  }
+
+  async markMessageAsDelivered(messageId: number): Promise<void> {
+    const deliveredAt = new Date();
+    await db
+      .update(messages)
+      .set({
+        isDelivered: true,
+        deliveredAt: deliveredAt,
+      })
+      .where(eq(messages.id, messageId));
+  }
+
+  async markMessageAsRead(messageId: number): Promise<void> {
+    const readAt = new Date();
+    await db
+      .update(messages)
+      .set({
+        isRead: true,
+        readAt: readAt,
+      })
+      .where(eq(messages.id, messageId));
+  }
+
+  async getUnreadMessages(conversationId: number, userId: number): Promise<any[]> {
+    const result = await db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          ne(messages.senderId, userId), // Messages not sent by the current user
+          eq(messages.isRead, false)
+        )
+      );
+
+    return result;
   }
 
   // Notification Settings
