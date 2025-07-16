@@ -450,12 +450,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markMessagesAsRead(conversationId: number, userId: number): Promise<void> {
-    const readAt = new Date();
     await db
       .update(messages)
       .set({ 
         isRead: true,
-        readAt: readAt,
+        readAt: new Date(),
       })
       .where(
         and(
@@ -467,23 +466,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markMessageAsDelivered(messageId: number): Promise<void> {
-    const deliveredAt = new Date();
     await db
       .update(messages)
       .set({
         isDelivered: true,
-        deliveredAt: deliveredAt,
+        deliveredAt: new Date(),
       })
       .where(eq(messages.id, messageId));
   }
 
   async markMessageAsRead(messageId: number): Promise<void> {
-    const readAt = new Date();
     await db
       .update(messages)
       .set({
         isRead: true,
-        readAt: readAt,
+        readAt: new Date(),
       })
       .where(eq(messages.id, messageId));
   }
