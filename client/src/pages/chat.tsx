@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
-import { ArrowLeft, Phone, MoreVertical, Smile, Send, Languages, ChevronDown, Globe } from "lucide-react";
+import { ArrowLeft, Phone, MoreVertical, Smile, Send, Languages, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useTranslation } from "@/hooks/use-translation";
@@ -17,15 +14,10 @@ export default function ChatScreen() {
   const [, setLocation] = useLocation();
   const { conversationId } = useParams();
   const [messageText, setMessageText] = useState("");
-  const [translationEnabled, setTranslationEnabled] = useState(false);
-  const [showTranslationPanel, setShowTranslationPanel] = useState(false);
-  const [targetLanguage, setTargetLanguage] = useState("en-US");
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { sendMessage } = useWebSocket();
   const { 
-    translateText: groqTranslateText, 
-    autoTranslate,
-    isTranslating,
     supportedLanguages,
     getLanguageName,
     getLanguageFlag 
@@ -44,34 +36,7 @@ export default function ChatScreen() {
     enabled: !!conversationId,
   });
 
-  const updateTranslationMutation = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`/api/conversations/${conversationId}/translation`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ translationEnabled: enabled }),
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to update translation setting");
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations", conversationId] });
-    },
-  });
 
-  useEffect(() => {
-    if (conversation?.conversation) {
-      setTranslationEnabled(conversation.conversation.translationEnabled);
-    }
-  }, [conversation]);
 
   // Mark messages as read when conversation is opened
   useEffect(() => {
@@ -107,39 +72,10 @@ export default function ChatScreen() {
   const handleSendMessage = async () => {
     if (!messageText.trim() || !conversationId) return;
 
-    let translatedText = "";
-    let finalTargetLanguage = "";
-
-    // Handle translation if enabled using Groq API
-    if (translationEnabled) {
-      finalTargetLanguage = targetLanguage;
-      
-      try {
-        const translation = await groqTranslateText(
-          messageText, 
-          targetLanguage,
-          undefined, // auto-detect source language
-          "WhatsApp-style messaging conversation" // context
-        );
-        
-        if (translation) {
-          translatedText = translation.translatedText;
-        }
-      } catch (error) {
-        console.error("Translation error:", error);
-        toast({
-          title: "Erro na tradução",
-          description: "Não foi possível traduzir a mensagem. Enviando sem tradução.",
-          variant: "destructive",
-        });
-      }
-    }
-
+    // Send message without manual translation - backend handles automatic translation
     sendMessage({
       conversationId: parseInt(conversationId),
       text: messageText,
-      translatedText,
-      targetLanguage: finalTargetLanguage,
     });
 
     setMessageText("");
@@ -152,10 +88,7 @@ export default function ChatScreen() {
     }
   };
 
-  const toggleTranslation = (enabled: boolean) => {
-    setTranslationEnabled(enabled);
-    updateTranslationMutation.mutate(enabled);
-  };
+
 
   const startVoiceCall = () => {
     if (conversation?.otherUser) {
@@ -238,75 +171,21 @@ export default function ChatScreen() {
         </div>
       </div>
 
-      {/* Translation Control Panel */}
+      {/* Translation Status Bar */}
       <div className="bg-blue-50 dark:bg-blue-900 dark:bg-opacity-20 border-b border-blue-200 dark:border-blue-700 p-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-center">
           <div className="flex items-center">
-            <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
-            <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">Tradução Groq</span>
-            {translationEnabled && (
+            <Languages className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2" />
+            <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+              Tradução automática ativa
+            </span>
+            {otherUser?.preferredLanguage && (
               <Badge variant="secondary" className="ml-2 text-xs">
-                {getLanguageFlag(targetLanguage)} {getLanguageName(targetLanguage)}
+                {getLanguageFlag(otherUser.preferredLanguage)} {getLanguageName(otherUser.preferredLanguage)}
               </Badge>
             )}
           </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowTranslationPanel(!showTranslationPanel)}
-              className="text-blue-700 dark:text-blue-300"
-            >
-              <Languages className="h-4 w-4 mr-1" />
-              Configurar
-              <ChevronDown className={`h-3 w-3 ml-1 transition-transform ${showTranslationPanel ? 'rotate-180' : ''}`} />
-            </Button>
-            <Switch 
-              checked={translationEnabled}
-              onCheckedChange={toggleTranslation}
-              disabled={isTranslating}
-            />
-          </div>
         </div>
-        
-        {/* Translation Settings Panel */}
-        {showTranslationPanel && (
-          <Card className="mt-3">
-            <CardContent className="p-4">
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                    Idioma de destino
-                  </label>
-                  <Select value={targetLanguage} onValueChange={setTargetLanguage}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Selecione o idioma" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {supportedLanguages.map((language) => (
-                        <SelectItem key={language.code} value={language.code}>
-                          <span className="flex items-center">
-                            <span className="mr-2">{language.flag}</span>
-                            {language.name}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  <div className="flex items-center justify-between">
-                    <span>Status da tradução:</span>
-                    <span className={`font-medium ${isTranslating ? 'text-orange-600' : 'text-green-600'}`}>
-                      {isTranslating ? 'Traduzindo...' : 'Pronto'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       {/* Messages Area */}
@@ -331,7 +210,7 @@ export default function ChatScreen() {
                     {message.originalText}
                   </div>
                   
-                  {message.translatedText && translationEnabled && (
+                  {message.translatedText && message.translatedText !== message.originalText && (
                     <div className="text-sm text-gray-600 dark:text-gray-300 italic border-t border-gray-100 dark:border-gray-600 pt-2 mt-2">
                       <Languages className="inline h-3 w-3 text-whatsapp-primary mr-1" />
                       {message.translatedText}
@@ -367,17 +246,16 @@ export default function ChatScreen() {
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={translationEnabled ? 
-                `Digite em qualquer idioma, será traduzido para ${getLanguageName(targetLanguage)}` : 
+              placeholder={otherUser?.preferredLanguage ? 
+                `Digite em qualquer idioma, será traduzido para ${getLanguageName(otherUser.preferredLanguage)}` : 
                 "Digite sua mensagem..."
               }
               className="pr-16"
-              disabled={isTranslating}
             />
-            {translationEnabled && (
+            {otherUser?.preferredLanguage && (
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                 <Badge variant="outline" className="text-xs">
-                  {getLanguageFlag(targetLanguage)}
+                  {getLanguageFlag(otherUser.preferredLanguage)}
                 </Badge>
               </div>
             )}
@@ -389,24 +267,14 @@ export default function ChatScreen() {
           
           <Button 
             onClick={handleSendMessage}
-            disabled={!messageText.trim() || isTranslating}
+            disabled={!messageText.trim()}
             className="bg-whatsapp-primary hover:bg-whatsapp-primary-dark text-white"
           >
-            {isTranslating ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
+            <Send className="h-4 w-4" />
           </Button>
         </div>
         
-        {/* Translation Status */}
-        {isTranslating && (
-          <div className="mt-2 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-            <Globe className="h-4 w-4 mr-2 animate-pulse" />
-            Traduzindo com Groq API...
-          </div>
-        )}
+
       </div>
     </div>
   );

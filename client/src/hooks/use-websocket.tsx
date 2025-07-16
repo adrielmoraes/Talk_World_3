@@ -9,8 +9,6 @@ interface WebSocketMessage {
 interface SendMessageData {
   conversationId: number;
   text: string;
-  translatedText?: string;
-  targetLanguage?: string;
 }
 
 export function useWebSocket() {
@@ -54,6 +52,8 @@ export function useWebSocket() {
             // Invalidate conversations and messages queries to refresh UI
             queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
             queryClient.invalidateQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString(), "messages"] });
+            // Also refresh the specific conversation to update last message
+            queryClient.invalidateQueries({ queryKey: ["/api/conversations", message.message.conversationId.toString()] });
             break;
             
           case "incoming_call":
