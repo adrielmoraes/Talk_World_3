@@ -104,11 +104,19 @@ export function useWebSocket() {
   }, []);
 
   const sendMessage = useCallback((data: SendMessageData) => {
+    console.log('WebSocket sendMessage called with data:', data);
+    console.log('WebSocket readyState:', ws.current?.readyState);
+    console.log('WebSocket OPEN constant:', WebSocket.OPEN);
+    
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({
+      const messageData = {
         type: "send_message",
         ...data,
-      }));
+      };
+      console.log('Sending WebSocket message:', messageData);
+      ws.current.send(JSON.stringify(messageData));
+    } else {
+      console.error('WebSocket not ready for sending message');
     }
   }, []);
 
