@@ -67,34 +67,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (ws.userId) {
             console.log('[WebSocket] Sending message from userId:', ws.userId, 'to conversation:', message.conversationId);
             
+            // Get conversation and recipient info for proper translation
+            const conversation = await storage.getConversationById(message.conversationId, ws.userId);
+            if (!conversation) {
+              console.log('[WebSocket] Conversation not found for id:', message.conversationId);
+              return;
+            }
+
+            const recipientId = conversation.otherUser?.id;
+            const recipient = await storage.getUser(recipientId);
+            
+            let finalTranslatedText = message.translatedText;
+            let finalTargetLanguage = message.targetLanguage;
+
+            // If conversation has translation enabled and recipient has preferred language
+            if (conversation.translationEnabled && recipient?.preferredLanguage) {
+              try {
+                // Translate to recipient's preferred language
+                const translation = await groqTranslationService.translateText(
+                  message.text,
+                  recipient.preferredLanguage,
+                  undefined, // auto-detect source
+                  "WhatsApp-style messaging conversation"
+                );
+                
+                if (translation) {
+                  finalTranslatedText = translation.translatedText;
+                  finalTargetLanguage = recipient.preferredLanguage;
+                  console.log('[WebSocket] Message translated to recipient language:', recipient.preferredLanguage);
+                }
+              } catch (error) {
+                console.error('[WebSocket] Translation error:', error);
+              }
+            }
+            
             const newMessage = await storage.createMessage({
               conversationId: message.conversationId,
               senderId: ws.userId,
               originalText: message.text,
-              translatedText: message.translatedText,
-              targetLanguage: message.targetLanguage,
+              translatedText: finalTranslatedText,
+              targetLanguage: finalTargetLanguage,
             });
 
             console.log('[WebSocket] Message created:', newMessage);
 
-            // Find recipient and send message
-            const conversation = await storage.getConversationById(message.conversationId, ws.userId);
-            if (conversation) {
-              const recipientId = conversation.otherUser?.id;
-              console.log('[WebSocket] Sending to recipient:', recipientId);
+            console.log('[WebSocket] Sending to recipient:', recipientId);
 
-              const recipientWs = connectedClients.get(recipientId);
-              if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
-                console.log('[WebSocket] Recipient WebSocket found and open');
-                recipientWs.send(JSON.stringify({
-                  type: 'new_message',
-                  message: newMessage,
-                }));
-              } else {
-                console.log('[WebSocket] Recipient WebSocket not found or closed');
-              }
+            const recipientWs = connectedClients.get(recipientId);
+            if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+              console.log('[WebSocket] Recipient WebSocket found and open');
+              recipientWs.send(JSON.stringify({
+                type: 'new_message',
+                message: newMessage,
+              }));
             } else {
-              console.log('[WebSocket] Conversation not found for id:', message.conversationId);
+              console.log('[WebSocket] Recipient WebSocket not found or closed');
             }
           }
         } else if (message.type === 'webrtc_signal') {
