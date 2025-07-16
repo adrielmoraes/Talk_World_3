@@ -1075,7 +1075,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settings = {
         defaultTranslationEnabled: false,
         defaultTargetLanguage: "en-US",
-        autoTranslate: true,
         showOriginalText: true,
         archiveOldMessages: false,
         messageRetentionDays: "30",

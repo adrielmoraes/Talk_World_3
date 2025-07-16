@@ -16,7 +16,7 @@ export default function ConversationsSettings() {
   const { toast } = useToast();
   const [defaultTranslationEnabled, setDefaultTranslationEnabled] = useState(false);
   const [defaultTargetLanguage, setDefaultTargetLanguage] = useState("en-US");
-  const [autoTranslate, setAutoTranslate] = useState(true);
+  
   const [showOriginalText, setShowOriginalText] = useState(true);
   const [archiveOldMessages, setArchiveOldMessages] = useState(false);
   const [messageRetentionDays, setMessageRetentionDays] = useState("30");
@@ -65,7 +65,7 @@ export default function ConversationsSettings() {
       const s = settings.settings;
       setDefaultTranslationEnabled(s.defaultTranslationEnabled ?? false);
       setDefaultTargetLanguage(s.defaultTargetLanguage ?? "en-US");
-      setAutoTranslate(s.autoTranslate ?? true);
+      
       setShowOriginalText(s.showOriginalText ?? true);
       setArchiveOldMessages(s.archiveOldMessages ?? false);
       setMessageRetentionDays(s.messageRetentionDays ?? "30");
@@ -76,7 +76,6 @@ export default function ConversationsSettings() {
     const newSettings = {
       defaultTranslationEnabled,
       defaultTargetLanguage,
-      autoTranslate,
       showOriginalText,
       archiveOldMessages,
       messageRetentionDays,
@@ -93,9 +92,7 @@ export default function ConversationsSettings() {
       case "defaultTargetLanguage":
         setDefaultTargetLanguage(value);
         break;
-      case "autoTranslate":
-        setAutoTranslate(value);
-        break;
+      
       case "showOriginalText":
         setShowOriginalText(value);
         break;
@@ -185,18 +182,7 @@ export default function ConversationsSettings() {
               </Select>
             </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-base">Tradução automática</span>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Traduzir mensagens automaticamente ao receber
-                </p>
-              </div>
-              <Switch 
-                checked={autoTranslate}
-                onCheckedChange={(value) => handleSettingChange("autoTranslate", value)}
-              />
-            </div>
+            
 
             <div className="flex items-center justify-between">
               <div>
