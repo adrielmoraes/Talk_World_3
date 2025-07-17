@@ -29,7 +29,7 @@ import {
   insertUserStorageDataSchema,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, desc, inArray, ne } from "drizzle-orm";
+import { eq, and, or, desc, inArray, ne, sql } from "drizzle-orm";
 
 // Storage interface
 // Type definitions for storage interface
@@ -384,25 +384,48 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getConversationById(conversationId: number, userId: number) {
-    const conversation = await db
+  async getConversationById(conversationId: number, userId: number): Promise<any> {
+    const result = await db
       .select({
         id: conversations.id,
         translationEnabled: conversations.translationEnabled,
         createdAt: conversations.createdAt,
         updatedAt: conversations.updatedAt,
+        otherUserId: sql<number>`CASE 
+          WHEN ${conversations.participant1Id} = ${userId} THEN ${conversations.participant2Id} 
+          ELSE ${conversations.participant1Id} 
+        END`,
         otherUser: {
-          id: users.id,
-          username: users.username,
-          profilePhoto: users.profilePhoto,
-          isVerified: users.isVerified,
-        },
+          id: sql<number>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.id 
+            ELSE u1.id 
+          END`,
+          username: sql<string>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.username 
+            ELSE u1.username 
+          END`,
+          profilePhoto: sql<string>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.profilePhoto 
+            ELSE u1.profilePhoto 
+          END`,
+          preferredLanguage: sql<string>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.preferredLanguage 
+            ELSE u1.preferredLanguage 
+          END`,
+          contactName: sql<string>`c.contact_name`,
+          nickname: sql<string>`c.nickname`,
+        }
       })
       .from(conversations)
-      .innerJoin(users, 
-        or(
-          and(eq(conversations.participant1Id, userId), eq(users.id, conversations.participant2Id)),
-          and(eq(conversations.participant2Id, userId), eq(users.id, conversations.participant1Id))
+      .leftJoin(users.as('u1'), eq(conversations.participant1Id, users.as('u1').id))
+      .leftJoin(users.as('u2'), eq(conversations.participant2Id, users.as('u2').id))
+      .leftJoin(contacts.as('c'), 
+        and(
+          eq(contacts.as('c').userId, userId),
+          sql`${contacts.as('c').contactUserId} = CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN ${conversations.participant2Id} 
+            ELSE ${conversations.participant1Id} 
+          END`
         )
       )
       .where(
@@ -416,7 +439,7 @@ export class DatabaseStorage implements IStorage {
       )
       .limit(1);
 
-    return conversation[0] || null;
+    return result[0] || null;
   }
 
   async getConversationByParticipants(user1Id: number, user2Id: number): Promise<Conversation | undefined> {
@@ -680,6 +703,82 @@ export class DatabaseStorage implements IStorage {
       .where(eq(calls.id, id))
       .returning();
     return call;
+  }
+
+  async getConversationsByUserId(userId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        id: conversations.id,
+        translationEnabled: conversations.translationEnabled,
+        createdAt: conversations.createdAt,
+        updatedAt: conversations.updatedAt,
+        otherUser: {
+          id: sql<number>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.id 
+            ELSE u1.id 
+          END`,
+          username: sql<string>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.username 
+            ELSE u1.username 
+          END`,
+          profilePhoto: sql<string>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.profilePhoto 
+            ELSE u1.profilePhoto 
+          END`,
+          preferredLanguage: sql<string>`CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN u2.preferredLanguage 
+            ELSE u1.preferredLanguage 
+          END`,
+          contactName: sql<string>`c.contact_name`,
+          nickname: sql<string>`c.nickname`,
+        },
+        lastMessage: {
+          id: sql<number>`lm.id`,
+          originalText: sql<string>`lm.original_text`,
+          translatedText: sql<string>`lm.translated_text`,
+          createdAt: sql<string>`lm.created_at`,
+          senderId: sql<number>`lm.sender_id`,
+        },
+        unreadCount: sql<number>`
+          COALESCE((
+            SELECT COUNT(*) 
+            FROM messages m 
+            WHERE m.conversation_id = ${conversations.id} 
+            AND m.sender_id != ${userId}
+            AND m.is_read = false
+          ), 0)
+        `,
+      })
+      .from(conversations)
+      .leftJoin(users.as('u1'), eq(conversations.participant1Id, users.as('u1').id))
+      .leftJoin(users.as('u2'), eq(conversations.participant2Id, users.as('u2').id))
+      .leftJoin(contacts.as('c'), 
+        and(
+          eq(contacts.as('c').userId, userId),
+          sql`${contacts.as('c').contactUserId} = CASE 
+            WHEN ${conversations.participant1Id} = ${userId} THEN ${conversations.participant2Id} 
+            ELSE ${conversations.participant1Id} 
+          END`
+        )
+      )
+      .leftJoin(
+        messages.as('lm'), 
+        sql`lm.id = (
+          SELECT id FROM messages 
+          WHERE conversation_id = ${conversations.id} 
+          ORDER BY created_at DESC 
+          LIMIT 1
+        )`
+      )
+      .where(
+        or(
+          eq(conversations.participant1Id, userId),
+          eq(conversations.participant2Id, userId)
+        )
+      )
+      .orderBy(desc(sql`COALESCE(lm.created_at, ${conversations.createdAt})`));
+
+    return result;
   }
 }
 
