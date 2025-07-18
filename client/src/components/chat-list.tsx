@@ -145,10 +145,7 @@ export default function ChatList() {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
                     <h3 className="text-base font-medium text-gray-900 dark:text-white truncate">
-                      {conversation.otherUser?.contactName || 
-                       conversation.otherUser?.nickname || 
-                       conversation.otherUser?.username || 
-                       "Usuário"}
+                      {conversation.otherUser?.username || "Usuário"}
                     </h3>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {conversation.lastMessage?.createdAt}
