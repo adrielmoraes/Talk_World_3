@@ -29,7 +29,7 @@ import {
   insertUserStorageDataSchema,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, desc, inArray, ne, sql, alias } from "drizzle-orm";
+import { eq, and, or, desc, inArray, ne, sql } from "drizzle-orm";
 
 // Storage interface
 // Type definitions for storage interface
@@ -385,10 +385,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getConversationById(conversationId: number, userId: number): Promise<any> {
-    const u1 = alias(users, 'u1');
-    const u2 = alias(users, 'u2');
-    const c = alias(contacts, 'c');
-
     const result = await db
       .select({
         id: conversations.id,
@@ -421,12 +417,12 @@ export class DatabaseStorage implements IStorage {
         }
       })
       .from(conversations)
-      .leftJoin(u1, eq(conversations.participant1Id, u1.id))
-      .leftJoin(u2, eq(conversations.participant2Id, u2.id))
-      .leftJoin(c, 
+      .leftJoin(users.as('u1'), eq(conversations.participant1Id, users.as('u1').id))
+      .leftJoin(users.as('u2'), eq(conversations.participant2Id, users.as('u2').id))
+      .leftJoin(contacts.as('c'), 
         and(
-          eq(c.userId, userId),
-          sql`${c.contactUserId} = CASE 
+          eq(contacts.as('c').userId, userId),
+          sql`${contacts.as('c').contactUserId} = CASE 
             WHEN ${conversations.participant1Id} = ${userId} THEN ${conversations.participant2Id} 
             ELSE ${conversations.participant1Id} 
           END`
@@ -710,11 +706,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getConversationsByUserId(userId: number): Promise<any[]> {
-    const u1 = alias(users, 'u1');
-    const u2 = alias(users, 'u2');
-    const c = alias(contacts, 'c');
-    const lm = alias(messages, 'lm');
-
     const result = await db
       .select({
         id: conversations.id,
@@ -759,19 +750,19 @@ export class DatabaseStorage implements IStorage {
         `,
       })
       .from(conversations)
-      .leftJoin(u1, eq(conversations.participant1Id, u1.id))
-      .leftJoin(u2, eq(conversations.participant2Id, u2.id))
-      .leftJoin(c, 
+      .leftJoin(users.as('u1'), eq(conversations.participant1Id, users.as('u1').id))
+      .leftJoin(users.as('u2'), eq(conversations.participant2Id, users.as('u2').id))
+      .leftJoin(contacts.as('c'), 
         and(
-          eq(c.userId, userId),
-          sql`${c.contactUserId} = CASE 
+          eq(contacts.as('c').userId, userId),
+          sql`${contacts.as('c').contactUserId} = CASE 
             WHEN ${conversations.participant1Id} = ${userId} THEN ${conversations.participant2Id} 
             ELSE ${conversations.participant1Id} 
           END`
         )
       )
       .leftJoin(
-        lm, 
+        messages.as('lm'), 
         sql`lm.id = (
           SELECT id FROM messages 
           WHERE conversation_id = ${conversations.id} 
