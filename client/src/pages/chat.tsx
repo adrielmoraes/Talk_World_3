@@ -173,7 +173,7 @@ export default function ChatScreen() {
           )}
           <div>
             <h3 className="font-medium">
-              {conversation?.otherUser?.contactName || conversation?.otherUser?.username || otherUser?.username || "Usuário"}
+              {conversation?.otherUser?.username || otherUser?.username || "Usuário"}
             </h3>
             <p className="text-xs opacity-80">online</p>
           </div>
