@@ -4,15 +4,20 @@ import { Search, Phone, PhoneCall, PhoneMissed, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import ContactSelector from "@/components/contact-selector";
+import type { CallsResponse } from "@/types/api";
 
 export default function CallsTab() {
   const [, setLocation] = useLocation();
+  const [showContactSelector, setShowContactSelector] = useState(false);
   const { toast } = useToast();
 
-  const { data: calls } = useQuery({
+  const { data: callsData } = useQuery<CallsResponse>({
     queryKey: ["/api/calls"],
     enabled: !!localStorage.getItem("token"),
   });
+  
+  const calls = callsData?.calls;
 
   const createCallMutation = useMutation({
     mutationFn: async (receiverId: number) => {
@@ -56,10 +61,7 @@ export default function CallsTab() {
   };
 
   const newCall = () => {
-    toast({
-      title: "Recurso não implementado",
-      description: "Seleção de contato para chamada será implementada em versão futura.",
-    });
+    setShowContactSelector(true);
   };
 
   const getCallIcon = (status: string, isOutgoing: boolean) => {
@@ -99,8 +101,8 @@ export default function CallsTab() {
 
       {/* Calls List */}
       <div className="flex-1 overflow-y-auto bg-white dark:bg-whatsapp-dark">
-        {calls?.calls?.length > 0 ? (
-          calls.calls.map((call: any) => {
+        {calls && calls.length > 0 ? (
+          calls.map((call) => {
             const isOutgoing = call.callerId === JSON.parse(localStorage.getItem("user") || "{}").id;
             const otherUser = isOutgoing ? call.receiver : call.caller;
             
@@ -168,6 +170,14 @@ export default function CallsTab() {
           </div>
         )}
       </div>
+
+      {/* Contact Selector Dialog */}
+      <ContactSelector
+        open={showContactSelector}
+        onOpenChange={setShowContactSelector}
+        title="Nova Chamada"
+        actionType="call"
+      />
 
       {/* New Call FAB */}
       <Button

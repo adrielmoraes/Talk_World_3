@@ -27,7 +27,7 @@ export default function CallsSettings() {
   const { data: settings } = useQuery({
     queryKey: ["/api/user/call-settings"],
     enabled: !!localStorage.getItem("token"),
-  });
+  }) as { data?: { settings?: any } };
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (settingsData: any) => {
@@ -64,7 +64,7 @@ export default function CallsSettings() {
   });
 
   useEffect(() => {
-    if (settings?.settings) {
+    if (settings && settings.settings) {
       const s = settings.settings;
       setEnableVoiceTranslation(s.enableVoiceTranslation ?? true);
       setVoiceTranslationLanguage(s.voiceTranslationLanguage ?? "en-US");
@@ -185,7 +185,16 @@ export default function CallsSettings() {
                 onValueChange={(value) => handleSettingChange("voiceTranslationLanguage", value)}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  {voiceTranslationLanguage && (
+                    <div className="flex items-center space-x-1">
+                      {supportedLanguages.find(lang => lang.code === voiceTranslationLanguage) && (
+                        <>
+                          <span>{supportedLanguages.find(lang => lang.code === voiceTranslationLanguage)?.flag}</span>
+                          <span>{voiceTranslationLanguage}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </SelectTrigger>
                 <SelectContent>
                   {supportedLanguages.map((language) => (
@@ -283,7 +292,23 @@ export default function CallsSettings() {
                 onValueChange={(value) => handleSettingChange("defaultCallType", value)}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  {defaultCallType && (
+                    <div className="flex items-center space-x-1">
+                      {defaultCallType === "voice" ? (
+                        <>
+                          <Phone className="h-4 w-4" />
+                          <span>Chamada de voz</span>
+                        </>
+                      ) : defaultCallType === "video" ? (
+                        <>
+                          <Video className="h-4 w-4" />
+                          <span>Chamada de vídeo</span>
+                        </>
+                      ) : (
+                        <span>{defaultCallType}</span>
+                      )}
+                    </div>
+                  )}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="voice">

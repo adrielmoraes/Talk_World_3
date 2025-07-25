@@ -5,28 +5,30 @@ import {
   conversations, 
   messages, 
   calls, 
-  contactSyncHistory,
   contactSyncSessions,
+  userActivity,
   notificationSettings,
   userStorageData,
+  conversationSettings,
   type User,
   type OtpCode,
   type Contact,
   type Conversation,
   type Message,
   type Call,
-  type ContactSyncHistory,
   type ContactSyncSession,
+  type UserActivity,
   insertUserSchema,
   insertOtpSchema,
   insertContactSchema,
   insertConversationSchema,
   insertMessageSchema,
   insertCallSchema,
-  insertContactSyncHistorySchema,
   insertContactSyncSessionSchema,
+  insertUserActivitySchema,
   insertNotificationSettingsSchema,
   insertUserStorageDataSchema,
+  insertConversationSettingsSchema,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, inArray, ne } from "drizzle-orm";
@@ -40,6 +42,7 @@ type InsertConversation = typeof conversations.$inferInsert;
 type InsertMessage = typeof messages.$inferInsert;
 type InsertCall = typeof calls.$inferInsert;
 type InsertContactSyncSession = typeof contactSyncSessions.$inferInsert;
+type InsertUserActivity = typeof userActivity.$inferInsert;
 
 interface IStorage {
   // User methods
@@ -65,7 +68,7 @@ interface IStorage {
 
   // Conversation methods
   getUserConversations(userId: number): Promise<any[]>;
-  getConversationById(id: number): Promise<Conversation | undefined>;
+  getConversationById(id: number, userId: number): Promise<any>;
   getConversationByParticipants(user1Id: number, user2Id: number): Promise<Conversation | undefined>;
   createConversation(insertConversation: InsertConversation): Promise<Conversation>;
   updateConversationTranslation(id: number, enabled: boolean): Promise<Conversation>;
@@ -73,17 +76,29 @@ interface IStorage {
   // Message methods
   createMessage(insertMessage: InsertMessage): Promise<Message>;
   getConversationMessages(conversationId: number): Promise<any[]>;
+  getUnreadMessages(conversationId: number, userId: number): Promise<any[]>;
+  markMessagesAsRead(conversationId: number, userId: number): Promise<void>;
 
   // Call methods
   getUserCalls(userId: number): Promise<any[]>;
   createCall(insertCall: InsertCall): Promise<Call>;
   updateCall(id: number, updates: Partial<Call>): Promise<Call>;
 
+  // User Activity methods
+  updateUserOnlineStatus(userId: number, isOnline: boolean): Promise<void>;
+  updateUserActivity(userId: number, activityType: string, conversationId?: number, metadata?: any): Promise<UserActivity>;
+  getUserLastActivity(userId: number): Promise<Date | null>;
+  getOnlineUsers(): Promise<User[]>;
+  getUsersLastSeen(userIds: number[]): Promise<{userId: number, lastSeenAt: Date, isOnline: boolean}[]>;
+  cleanupOldActivity(olderThanDays: number): Promise<void>;
+
   // Settings methods
   getUserNotificationSettings(userId: number): Promise<any>;
   updateNotificationSettings(userId: number, settings: Partial<any>): Promise<any>;
   getUserStorageData(userId: number): Promise<any>;
   updateUserStorageData(userId: number, data: Partial<any>): Promise<any>;
+  getUserConversationSettings(userId: number): Promise<any>;
+  updateUserConversationSettings(userId: number, settings: Partial<any>): Promise<any>;
   clearUserCache(userId: number): Promise<void>;
   deleteAllUserData(userId: number): Promise<void>;
 }
@@ -562,9 +577,37 @@ export class DatabaseStorage implements IStorage {
     return this.getUserStorageData(userId);
   }
 
+  // User Conversation Settings
+  async getUserConversationSettings(userId: number) {
+    const settings = await db.select()
+      .from(conversationSettings)
+      .where(eq(conversationSettings.userId, userId))
+      .limit(1);
+
+    if (settings.length === 0) {
+      // Create default settings if none exist
+      const defaultSettings = await db.insert(conversationSettings)
+        .values({ userId })
+        .returning();
+      return defaultSettings[0];
+    }
+
+    return settings[0];
+  }
+
+  async updateUserConversationSettings(userId: number, settings: Partial<typeof conversationSettings.$inferInsert>) {
+    await db.update(conversationSettings)
+      .set({ ...settings, updatedAt: new Date() })
+      .where(eq(conversationSettings.userId, userId));
+
+    return this.getUserConversationSettings(userId);
+  }
+
   async clearUserCache(userId: number) {
     const currentData = await this.getUserStorageData(userId);
-    const newTotalUsed = currentData.totalUsed - currentData.cache;
+    const totalUsed = currentData.totalUsed || 0;
+    const cache = currentData.cache || 0;
+    const newTotalUsed = totalUsed - cache;
 
     await this.updateUserStorageData(userId, {
       cache: 0,
@@ -680,6 +723,83 @@ export class DatabaseStorage implements IStorage {
       .where(eq(calls.id, id))
       .returning();
     return call;
+  }
+
+  // User Activity methods
+  async updateUserOnlineStatus(userId: number, isOnline: boolean): Promise<void> {
+    const now = new Date();
+    await db
+      .update(users)
+      .set({ 
+        isOnline,
+        lastSeenAt: isOnline ? now : now,
+        lastActivityAt: now
+      })
+      .where(eq(users.id, userId));
+
+    // Registrar atividade
+    await this.updateUserActivity(userId, isOnline ? 'online' : 'offline');
+  }
+
+  async updateUserActivity(userId: number, activityType: string, conversationId?: number, metadata?: any): Promise<UserActivity> {
+    const [activity] = await db
+      .insert(userActivity)
+      .values({
+        userId,
+        activityType,
+        conversationId,
+        metadata
+      })
+      .returning();
+
+    // Atualizar lastActivityAt do usuário
+    await db
+      .update(users)
+      .set({ lastActivityAt: new Date() })
+      .where(eq(users.id, userId));
+
+    return activity;
+  }
+
+  async getUserLastActivity(userId: number): Promise<Date | null> {
+    const [user] = await db
+      .select({ lastActivityAt: users.lastActivityAt })
+      .from(users)
+      .where(eq(users.id, userId));
+    
+    return user?.lastActivityAt || null;
+  }
+
+  async getOnlineUsers(): Promise<User[]> {
+    return await db
+      .select()
+      .from(users)
+      .where(eq(users.isOnline, true));
+  }
+
+  async getUsersLastSeen(userIds: number[]): Promise<{userId: number, lastSeenAt: Date, isOnline: boolean}[]> {
+    const result = await db
+      .select({
+        userId: users.id,
+        lastSeenAt: users.lastSeenAt,
+        isOnline: users.isOnline
+      })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    
+    return result;
+  }
+
+  async cleanupOldActivity(olderThanDays: number = 30): Promise<void> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+    
+    await db
+      .delete(userActivity)
+      .where(and(
+        eq(userActivity.activityType, 'typing'), // Limpar apenas atividades de digitação antigas
+        // Adicionar condição de data quando disponível
+      ));
   }
 }
 

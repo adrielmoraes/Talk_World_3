@@ -11,6 +11,9 @@ export const users = pgTable("users", {
   gender: text("gender").notNull(), // 'male' or 'female'
   profilePhoto: text("profile_photo"),
   isVerified: boolean("is_verified").notNull().default(false),
+  isOnline: boolean("is_online").notNull().default(false),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -81,6 +84,16 @@ export const calls = pgTable("calls", {
   endedAt: timestamp("ended_at"),
 });
 
+// Nova tabela para rastrear atividade detalhada dos usuários
+export const userActivity = pgTable("user_activity", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  activityType: text("activity_type").notNull(), // 'online', 'typing', 'viewing_chat', 'app_background', 'app_foreground'
+  conversationId: integer("conversation_id").references(() => conversations.id), // Para atividades específicas de conversa
+  metadata: jsonb("metadata"), // Dados adicionais da atividade
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   sentMessages: many(messages),
@@ -89,6 +102,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   contacts: many(contacts),
   outgoingCalls: many(calls, { relationName: "caller" }),
   incomingCalls: many(calls, { relationName: "receiver" }),
+  activities: many(userActivity),
 }));
 
 export const contactsRelations = relations(contacts, ({ one }) => ({
@@ -147,6 +161,17 @@ export const callsRelations = relations(calls, ({ one }) => ({
   }),
 }));
 
+export const userActivityRelations = relations(userActivity, ({ one }) => ({
+  user: one(users, {
+    fields: [userActivity.userId],
+    references: [users.id],
+  }),
+  conversation: one(conversations, {
+    fields: [userActivity.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -189,6 +214,11 @@ export const insertCallSchema = createInsertSchema(calls).omit({
   startedAt: true,
 });
 
+export const insertUserActivitySchema = createInsertSchema(userActivity).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -198,6 +228,8 @@ export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type ContactSyncSession = typeof contactSyncSessions.$inferSelect;
 export type InsertContactSyncSession = z.infer<typeof insertContactSyncSessionSchema>;
+export type UserActivity = typeof userActivity.$inferSelect;
+export type InsertUserActivity = z.infer<typeof insertUserActivitySchema>;
 export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messages.$inferSelect;
@@ -243,3 +275,19 @@ export const insertNotificationSettingsSchema = createInsertSchema(notificationS
 export const selectNotificationSettingsSchema = createSelectSchema(notificationSettings);
 export const insertUserStorageDataSchema = createInsertSchema(userStorageData);
 export const selectUserStorageDataSchema = createSelectSchema(userStorageData);
+
+// User Conversation Settings
+export const conversationSettings = pgTable('conversation_settings', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  defaultTranslationEnabled: boolean('default_translation_enabled').default(false),
+  defaultTargetLanguage: text('default_target_language').default('en-US'),
+  showOriginalText: boolean('show_original_text').default(true),
+  archiveOldMessages: boolean('archive_old_messages').default(false),
+  messageRetentionDays: integer('message_retention_days').default(30),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const insertConversationSettingsSchema = createInsertSchema(conversationSettings);
+export const selectConversationSettingsSchema = createSelectSchema(conversationSettings);

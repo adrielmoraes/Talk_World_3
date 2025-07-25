@@ -65,12 +65,75 @@ export default function ProfileSetupScreen() {
     });
   };
 
+  const uploadProfilePhotoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append('profilePhoto', file);
+      
+      const response = await fetch("/api/user/profile-photo", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setProfilePhoto(data.profilePhoto);
+      toast({
+        title: "Sucesso",
+        description: "Foto de perfil atualizada com sucesso!",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro",
+        description: error.message || "Falha ao fazer upload da foto. Tente novamente.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleProfilePhoto = () => {
-    // In a real app, this would open file picker or camera
-    toast({
-      title: "Recurso não implementado",
-      description: "Função de foto será implementada em versão futura.",
-    });
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/jpg,image/png,image/webp';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        // Validate file size (5MB max)
+        if (file.size > 5 * 1024 * 1024) {
+          toast({
+            title: "Erro",
+            description: "A imagem deve ter no máximo 5MB.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+          toast({
+            title: "Erro",
+            description: "Apenas arquivos de imagem (JPEG, PNG, WebP) são permitidos.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        uploadProfilePhotoMutation.mutate(file);
+      }
+    };
+    input.click();
   };
 
   const isValid = username.length >= 3 && gender;
@@ -97,17 +160,32 @@ export default function ProfileSetupScreen() {
           {/* Profile Photo */}
           <div className="text-center mb-6">
             <div className="relative inline-block">
-              <div className="w-24 h-24 bg-gray-200 dark:bg-whatsapp-elevated rounded-full flex items-center justify-center">
-                <User className="h-8 w-8 text-gray-400" />
+              <div className="w-24 h-24 bg-gray-200 dark:bg-whatsapp-elevated rounded-full flex items-center justify-center overflow-hidden">
+                {profilePhoto ? (
+                  <img 
+                    src={profilePhoto} 
+                    alt="Foto de perfil" 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="h-8 w-8 text-gray-400" />
+                )}
               </div>
               <button 
                 onClick={handleProfilePhoto}
-                className="absolute bottom-0 right-0 bg-whatsapp-primary text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-whatsapp-secondary transition-colors"
+                disabled={uploadProfilePhotoMutation.isPending}
+                className="absolute bottom-0 right-0 bg-whatsapp-primary text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-whatsapp-secondary transition-colors disabled:opacity-50"
               >
-                <Camera className="h-4 w-4" />
+                {uploadProfilePhotoMutation.isPending ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Camera className="h-4 w-4" />
+                )}
               </button>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Toque para adicionar foto</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              {profilePhoto ? "Toque para alterar foto" : "Toque para adicionar foto"}
+            </p>
           </div>
 
           {/* Username */}
@@ -154,7 +232,21 @@ export default function ProfileSetupScreen() {
             </Label>
             <Select value={preferredLanguage} onValueChange={setPreferredLanguage}>
               <SelectTrigger>
-                <SelectValue />
+                {preferredLanguage && (
+                  <div className="flex items-center space-x-1">
+                    <span>{preferredLanguage === "pt-BR" ? "🇧🇷" :
+                          preferredLanguage === "en-US" ? "🇺🇸" :
+                          preferredLanguage === "es-ES" ? "🇪🇸" :
+                          preferredLanguage === "fr-FR" ? "🇫🇷" :
+                          preferredLanguage === "de-DE" ? "🇩🇪" :
+                          preferredLanguage === "it-IT" ? "🇮🇹" :
+                          preferredLanguage === "ja-JP" ? "🇯🇵" :
+                          preferredLanguage === "ko-KR" ? "🇰🇷" :
+                          preferredLanguage === "zh-CN" ? "🇨🇳" :
+                          ""}</span>
+                    <span>{preferredLanguage}</span>
+                  </div>
+                )}
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pt-BR">🇧🇷 Português (Brasil)</SelectItem>

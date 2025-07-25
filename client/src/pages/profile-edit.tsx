@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import type { UserResponse } from "@/types/api";
 
 export default function ProfileEdit() {
   const [, setLocation] = useLocation();
@@ -16,10 +17,48 @@ export default function ProfileEdit() {
   const [username, setUsername] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [preferredLanguage, setPreferredLanguage] = useState("pt-BR");
+  const [profilePhoto, setProfilePhoto] = useState("");
 
-  const { data: userData } = useQuery({
+  const { data: userData } = useQuery<UserResponse>({
     queryKey: ["/api/user/me"],
     enabled: !!localStorage.getItem("token"),
+  });
+
+  const uploadProfilePhotoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("profilePhoto", file);
+
+      const response = await fetch("/api/user/profile-photo", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to upload profile photo");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setProfilePhoto(data.profilePhoto);
+      queryClient.invalidateQueries({ queryKey: ["/api/user/me"] });
+      toast({
+        title: "Foto atualizada",
+        description: "Sua foto de perfil foi atualizada com sucesso.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro no upload",
+        description: error.message || "Não foi possível fazer upload da foto.",
+        variant: "destructive",
+      });
+    },
   });
 
   const updateProfileMutation = useMutation({
@@ -63,6 +102,7 @@ export default function ProfileEdit() {
       setUsername(userData.user.username || "");
       setPhoneNumber(userData.user.phoneNumber || "");
       setPreferredLanguage(userData.user.preferredLanguage || "pt-BR");
+      setProfilePhoto(userData.user.profilePhoto || "");
     }
   }, [userData]);
 
@@ -74,10 +114,36 @@ export default function ProfileEdit() {
   };
 
   const handleProfilePhoto = () => {
-    toast({
-      title: "Recurso em desenvolvimento",
-      description: "Upload de foto de perfil será implementado em breve.",
-    });
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        // Validar tamanho do arquivo (5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          toast({
+            title: "Arquivo muito grande",
+            description: "A imagem deve ter no máximo 5MB.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Validar tipo do arquivo
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+          toast({
+            title: "Formato inválido",
+            description: "Use apenas arquivos JPEG, PNG ou WebP.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        uploadProfilePhotoMutation.mutate(file);
+      }
+    };
+    input.click();
   };
 
   const goBack = () => {
@@ -112,9 +178,9 @@ export default function ProfileEdit() {
           {/* Profile Photo */}
           <div className="text-center">
             <div className="relative inline-block">
-              {userData?.user?.profilePhoto ? (
+              {profilePhoto ? (
                 <img 
-                  src={userData.user.profilePhoto}
+                  src={profilePhoto}
                   alt="Profile"
                   className="w-24 h-24 rounded-full object-cover"
                 />
@@ -125,12 +191,19 @@ export default function ProfileEdit() {
               )}
               <button 
                 onClick={handleProfilePhoto}
-                className="absolute bottom-0 right-0 bg-whatsapp-primary text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-whatsapp-secondary transition-colors"
+                disabled={uploadProfilePhotoMutation.isPending}
+                className="absolute bottom-0 right-0 bg-whatsapp-primary text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-whatsapp-secondary transition-colors disabled:opacity-50"
               >
-                <Camera className="h-4 w-4" />
+                {uploadProfilePhotoMutation.isPending ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Camera className="h-4 w-4" />
+                )}
               </button>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Toque para alterar foto</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              {profilePhoto ? "Toque para alterar foto" : "Toque para adicionar foto"}
+            </p>
           </div>
 
           {/* Username */}
@@ -167,7 +240,21 @@ export default function ProfileEdit() {
             </Label>
             <Select value={preferredLanguage} onValueChange={setPreferredLanguage}>
               <SelectTrigger>
-                <SelectValue />
+                {preferredLanguage && (
+                  <div className="flex items-center space-x-1">
+                    <span>{preferredLanguage === "pt-BR" ? "🇧🇷" :
+                          preferredLanguage === "en-US" ? "🇺🇸" :
+                          preferredLanguage === "es-ES" ? "🇪🇸" :
+                          preferredLanguage === "fr-FR" ? "🇫🇷" :
+                          preferredLanguage === "de-DE" ? "🇩🇪" :
+                          preferredLanguage === "it-IT" ? "🇮🇹" :
+                          preferredLanguage === "ja-JP" ? "🇯🇵" :
+                          preferredLanguage === "ko-KR" ? "🇰🇷" :
+                          preferredLanguage === "zh-CN" ? "🇨🇳" :
+                          ""}</span>
+                    <span>{preferredLanguage}</span>
+                  </div>
+                )}
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pt-BR">🇧🇷 Português (Brasil)</SelectItem>

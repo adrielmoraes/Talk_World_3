@@ -1,0 +1,17 @@
+<svg width="500" height="500" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="blur"/>
+      <feOffset in="blur" dx="4" dy="8" result="offsetBlur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.3" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="offsetBlur" operator="in" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Símbolo do infinito -->
+  <path d="M 130 250 C 35 250, 35 150, 130 150 C 225 150, 225 250, 130 250 Z M 130 250 C 35 250, 35 350, 130 350 C 225 350, 225 250, 130 250 Z M 370 250 C 465 250, 465 150, 370 150 C 275 150, 275 250, 370 250 Z M 370 250 C 465 250, 465 350, 370 350 C 275 350, 275 250, 370 250 Z" fill="#ffffff" stroke="#cccccc" stroke-width="8" filter="url(#dropShadow)"/>
+</svg>

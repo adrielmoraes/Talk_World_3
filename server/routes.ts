@@ -8,6 +8,9 @@ import { z } from "zod";
 import { voiceTranslationService } from "./voice-translation";
 import { groqTranslationService } from "./groq-translation";
 import multer from "multer";
+import type { FileFilterCallback } from "multer";
+import fs from "fs";
+import path from "path";
 
 const JWT_SECRET = process.env.JWT_SECRET || "talk-world-secret-key";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
@@ -60,7 +63,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             connectedClients.set(decoded.userId, ws);
             console.log('[WebSocket] User authenticated:', decoded.userId);
             console.log('[WebSocket] Connected clients:', Array.from(connectedClients.keys()));
+            
+            // Atualizar status online no banco de dados
+            await storage.updateUserOnlineStatus(decoded.userId, true);
+            
             ws.send(JSON.stringify({ type: 'auth_success' }));
+            
+            // Broadcast user online status to all connected users
+            Array.from(connectedClients.entries()).forEach(([userId, client]) => {
+              if (client.readyState === WebSocket.OPEN && userId !== decoded.userId) {
+                client.send(JSON.stringify({
+                  type: 'user_status',
+                  userId: decoded.userId,
+                  isOnline: true,
+                  lastSeen: null
+                }));
+              }
+            });
           } catch (error) {
             ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid token' }));
             ws.close();
@@ -86,18 +105,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Always translate if recipient has preferred language and it's different from original
             if (recipient?.preferredLanguage) {
               try {
-                // Translate to recipient's preferred language
-                const translation = await groqTranslationService.translateText(
-                  message.text,
-                  recipient.preferredLanguage,
-                  undefined, // auto-detect source
-                  "WhatsApp-style messaging conversation"
-                );
+                // First detect the language of the original message
+                const detectionResult = await groqTranslationService.detectLanguage(message.text);
+                const detectedLanguage = detectionResult?.language;
                 
-                if (translation) {
-                  finalTranslatedText = translation.translatedText;
-                  finalTargetLanguage = recipient.preferredLanguage;
-                  console.log('[WebSocket] Message translated to recipient language:', recipient.preferredLanguage);
+                // Only translate if the detected language is different from recipient's preferred language
+                if (detectedLanguage && detectedLanguage !== recipient.preferredLanguage) {
+                  // Get previous messages for context (up to 3)
+                  const previousMessages = [];
+                  try {
+                    const messages = await storage.getConversationMessages(message.conversationId);
+                    if (messages && messages.length > 0) {
+                      for (const msg of messages) {
+                        previousMessages.push({
+                          text: msg.originalText || msg.text,
+                          sender: msg.senderId === ws.userId ? 'sender' : 'recipient'
+                        });
+                      }
+                    }
+                  } catch (err) {
+                    console.error('[WebSocket] Error getting previous messages for context:', err);
+                  }
+                  
+                  // Translate to recipient's preferred language with conversation context
+                  const translation = await groqTranslationService.translateWithContext({
+                    text: message.text,
+                    sourceLanguage: detectedLanguage,
+                    targetLanguage: recipient.preferredLanguage,
+                    context: {
+                      conversationId: message.conversationId,
+                      senderId: ws.userId.toString(),
+                      recipientId: recipientId.toString(),
+                      messageType: 'chat',
+                      previousMessages: previousMessages
+                    }
+                  });
+                  
+                  if (translation && translation.translatedText) {
+                    finalTranslatedText = translation.translatedText;
+                    finalTargetLanguage = recipient.preferredLanguage;
+                    console.log('[WebSocket] Message translated from', detectedLanguage, 'to', recipient.preferredLanguage);
+                  }
+                } else {
+                  console.log('[WebSocket] Translation skipped - same language detected:', detectedLanguage);
                 }
               } catch (error) {
                 console.error('[WebSocket] Translation error:', error);
@@ -185,6 +235,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (ws.userId && message.conversationId) {
             voiceTranslationService.cleanupConversation(ws.userId, message.conversationId);
           }
+        } else if (message.type === 'get_user_status') {
+          // Handle user status request
+          if (ws.userId && message.userId) {
+            const targetUserId = message.userId;
+            const targetWs = connectedClients.get(targetUserId);
+            
+            // Check if user is online (both WebSocket and database)
+            const isOnlineWs = targetWs && targetWs.readyState === WebSocket.OPEN;
+            
+            try {
+              // Obter dados do usuário do banco
+              const user = await storage.getUser(targetUserId);
+              const lastActivity = await storage.getUserLastActivity(targetUserId);
+              
+              // Verificar se o usuário está realmente online
+              const isOnline = isOnlineWs && user?.isOnline;
+              
+              // Usar lastSeenAt do banco ou lastActivity
+              const lastSeen = !isOnline ? (user?.lastSeenAt || lastActivity) : null;
+              
+              // Send status back to requester
+              ws.send(JSON.stringify({
+                type: 'user_status',
+                userId: targetUserId,
+                isOnline,
+                lastSeen,
+                lastActivity
+              }));
+            } catch (error) {
+              console.error('Error getting user status:', error);
+              // Fallback para método anterior
+              ws.send(JSON.stringify({
+                type: 'user_status',
+                userId: targetUserId,
+                isOnline: isOnlineWs,
+                lastSeen: null
+              }));
+            }
+          }
+        } else if (message.type === 'user_activity') {
+          // Handle user activity updates (typing, viewing chat, etc.)
+          if (ws.userId) {
+            try {
+              await storage.updateUserActivity(
+                ws.userId, 
+                message.activityType, 
+                message.conversationId, 
+                message.metadata
+              );
+              
+              // Broadcast typing status to conversation participants
+              if (message.activityType === 'typing' && message.conversationId) {
+                const conversation = await storage.getConversationById(message.conversationId, ws.userId);
+                if (conversation?.otherUser) {
+                  const otherUserWs = connectedClients.get(conversation.otherUser.id);
+                  if (otherUserWs && otherUserWs.readyState === WebSocket.OPEN) {
+                    otherUserWs.send(JSON.stringify({
+                      type: 'user_activity',
+                      userId: ws.userId,
+                      activityType: message.activityType,
+                      conversationId: message.conversationId,
+                      isTyping: message.isTyping
+                    }));
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error updating user activity:', error);
+            }
+          }
         }
       } catch (error) {
         console.error('WebSocket message error:', error);
@@ -192,9 +312,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    ws.on('close', () => {
+    ws.on('close', async () => {
       if (ws.userId) {
         connectedClients.delete(ws.userId);
+        
+        // Atualizar status offline no banco de dados
+        try {
+          await storage.updateUserOnlineStatus(ws.userId, false);
+        } catch (error) {
+          console.error('Error updating user offline status:', error);
+        }
+        
+        // Broadcast user offline status to all connected users
+        const lastSeen = new Date().toISOString();
+        Array.from(connectedClients.entries()).forEach(([userId, client]) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'user_status',
+              userId: ws.userId,
+              isOnline: false,
+              lastSeen
+            }));
+          }
+        });
       }
     });
   });
@@ -277,7 +417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Generate JWT token
-      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
 
       res.json({
         token,
@@ -603,11 +743,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const upload = multer({ 
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_FILE_SIZE },
-    fileFilter: (req, file, cb) => {
+    fileFilter: (req, file, cb: FileFilterCallback) => {
       if (ALLOWED_FILE_TYPES.includes(file.mimetype)) {
         cb(null, true);
       } else {
         cb(new Error('Invalid file type'));
+      }
+    }
+  });
+
+  // Set up multer for profile photo uploads
+  const profilePhotoUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        const uploadPath = path.join(process.cwd(), UPLOAD_DIR, 'profiles');
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+      },
+      filename: (req, file, cb) => {
+        // Generate unique filename with timestamp and user ID
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const extension = path.extname(file.originalname);
+        cb(null, `profile-${req.userId}-${uniqueSuffix}${extension}`);
+      }
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit for profile photos
+    fileFilter: (req, file, cb: FileFilterCallback) => {
+      // Only allow image files for profile photos
+      const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      if (allowedImageTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Apenas arquivos de imagem (JPEG, PNG, WebP) são permitidos'));
       }
     }
   });
@@ -735,12 +905,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let translation;
       if (context) {
-        translation = await groqTranslationService.translateWithContext(
+        translation = await groqTranslationService.translateWithContext({
           text, 
           targetLanguage, 
-          context, 
-          sourceLanguage
-        );
+          sourceLanguage,
+          context
+        });
       } else {
         translation = await groqTranslationService.translateText(
           text, 
@@ -916,55 +1086,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TTS (Text-to-Speech) endpoint
-  app.post('/api/voice/tts', authenticateToken, async (req: Request, res: Response) => {
-    try {
-      const { text, language } = req.body;
 
-      if (!text || typeof text !== 'string') {
-        return res.status(400).json({ error: 'Text is required' });
-      }
 
-      console.log('[TTS] Generating speech for:', text, 'in', language);
 
-      // Generate speech using voice translation service
-      const audioBuffer = await voiceTranslationService.generateSpeech(text, language || 'en-US');
-
-      if (!audioBuffer) {
-        return res.status(500).json({ error: 'Failed to generate speech' });
-      }
-
-      // Set appropriate headers for audio response
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Content-Length', audioBuffer.length.toString());
-      res.setHeader('Accept-Ranges', 'bytes');
-
-      // Send audio buffer
-      res.send(audioBuffer);
-    } catch (error) {
-      console.error('[TTS] Error:', error);
-      res.status(500).json({ error: 'TTS generation failed' });
-    }
-  });
-
-  // Get user profile
-  app.get("/api/user/me", authenticateToken, async (req, res) => {
-    try {
-      if (!req.userId) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
-
-      const user = await storage.getUser(req.userId);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      res.json({ user });
-    } catch (error) {
-      console.error("Error fetching user profile:", error);
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
 
   // Update user profile
   app.patch("/api/user/profile", authenticateToken, async (req, res) => {
@@ -988,6 +1112,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating user profile:", error);
       res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Upload profile photo
+  app.post("/api/user/profile-photo", authenticateToken, profilePhotoUpload.single('profilePhoto'), async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: 'Nenhuma imagem foi enviada' });
+      }
+
+      // Generate the URL for the uploaded file
+      const profilePhotoUrl = `/uploads/profiles/${req.file.filename}`;
+
+      // Update user profile with new photo URL
+      const updatedUser = await storage.updateUser(req.userId, {
+        profilePhoto: profilePhotoUrl,
+      });
+
+      if (!updatedUser) {
+        // If user update fails, delete the uploaded file
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (unlinkError) {
+          console.error('Error deleting uploaded file:', unlinkError);
+        }
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+
+      res.json({ 
+        message: 'Foto de perfil atualizada com sucesso',
+        profilePhoto: profilePhotoUrl,
+        user: updatedUser 
+      });
+    } catch (error) {
+      console.error("Error uploading profile photo:", error);
+      
+      // Clean up uploaded file if there was an error
+      if (req.file) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (unlinkError) {
+          console.error('Error deleting uploaded file after error:', unlinkError);
+        }
+      }
+      
+      res.status(500).json({ message: "Erro interno do servidor" });
+    }
+  });
+
+  // Delete profile photo
+  app.delete("/api/user/profile-photo", authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      // Get current user to find existing profile photo
+      const currentUser = await storage.getUser(req.userId);
+      if (!currentUser) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+
+      // Delete the old profile photo file if it exists
+      if (currentUser.profilePhoto) {
+        const oldPhotoPath = path.join(process.cwd(), 'uploads', 'profiles', path.basename(currentUser.profilePhoto));
+        try {
+          if (fs.existsSync(oldPhotoPath)) {
+            fs.unlinkSync(oldPhotoPath);
+          }
+        } catch (deleteError) {
+          console.error('Error deleting old profile photo:', deleteError);
+        }
+      }
+
+      // Update user profile to remove photo
+      const updatedUser = await storage.updateUser(req.userId, {
+        profilePhoto: null,
+      });
+
+      res.json({ 
+        message: 'Foto de perfil removida com sucesso',
+        user: updatedUser 
+      });
+    } catch (error) {
+      console.error("Error deleting profile photo:", error);
+      res.status(500).json({ message: "Erro interno do servidor" });
     }
   });
 
@@ -1106,13 +1320,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'Unauthorized' });
       }
       
-      // Mock settings for now - in production, store in database
+      const userSettings = await storage.getUserConversationSettings(req.userId);
+      
+      // Formatar os dados para o cliente
       const settings = {
-        defaultTranslationEnabled: false,
-        defaultTargetLanguage: "en-US",
-        showOriginalText: true,
-        archiveOldMessages: false,
-        messageRetentionDays: "30",
+        defaultTranslationEnabled: userSettings.defaultTranslationEnabled,
+        defaultTargetLanguage: userSettings.defaultTargetLanguage,
+        showOriginalText: userSettings.showOriginalText,
+        archiveOldMessages: userSettings.archiveOldMessages,
+        messageRetentionDays: String(userSettings.messageRetentionDays),
       };
 
       res.json({ settings });
@@ -1130,8 +1346,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const settingsData = req.body;
-      // In production, save to database
-      res.json({ message: "Conversation settings updated successfully", settings: settingsData });
+      
+      // Converter messageRetentionDays para número
+      const formattedSettings = {
+        ...settingsData,
+        messageRetentionDays: parseInt(settingsData.messageRetentionDays, 10)
+      };
+      
+      // Salvar no banco de dados
+      const updatedSettings = await storage.updateUserConversationSettings(req.userId, formattedSettings);
+      
+      // Formatar os dados para o cliente
+      const settings = {
+        defaultTranslationEnabled: updatedSettings.defaultTranslationEnabled,
+        defaultTargetLanguage: updatedSettings.defaultTargetLanguage,
+        showOriginalText: updatedSettings.showOriginalText,
+        archiveOldMessages: updatedSettings.archiveOldMessages,
+        messageRetentionDays: String(updatedSettings.messageRetentionDays),
+      };
+      
+      res.json({ message: "Conversation settings updated successfully", settings });
     } catch (error) {
       console.error("Error updating conversation settings:", error);
       res.status(500).json({ message: "Internal server error" });

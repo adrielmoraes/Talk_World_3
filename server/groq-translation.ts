@@ -1,7 +1,16 @@
 import Groq from 'groq-sdk';
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama3-70b-8192'; // Provide a default value
+const GROQ_MODEL = process.env.GROQ_MODEL || 'gemma2-9b-it'; // Provide a default value
+
+// Debug logging
+console.log('[GroqTranslation] API Key loaded:', GROQ_API_KEY ? `${GROQ_API_KEY.substring(0, 10)}...` : 'NOT FOUND');
+console.log('[GroqTranslation] Model:', GROQ_MODEL);
+
+if (!GROQ_API_KEY) {
+  console.error('[GroqTranslation] ERROR: GROQ_API_KEY is not set in environment variables');
+  throw new Error('GROQ_API_KEY is required but not found in environment variables');
+}
 
 const groq = new Groq({
   apiKey: GROQ_API_KEY,
@@ -48,7 +57,7 @@ export class GroqTranslationService {
         ],
         model: GROQ_MODEL,
         temperature: this.TEMPERATURE,
-        max_tokens: 100,
+        max_tokens: 500,
       });
 
       const result = completion.choices[0].message.content?.trim();
@@ -93,13 +102,13 @@ export class GroqTranslationService {
         return {
           originalText: text,
           translatedText: text,
-          sourceLanguage: detectedSourceLang,
+          sourceLanguage: detectedSourceLang || 'unknown',
           targetLanguage,
           confidence: 1.0
         };
       }
 
-      const sourceLanguageName = this.getLanguageName(detectedSourceLang);
+      const sourceLanguageName = this.getLanguageName(detectedSourceLang || 'en-US');
       const targetLanguageName = this.getLanguageName(targetLanguage);
 
       const completion = await groq.chat.completions.create({
@@ -126,7 +135,7 @@ export class GroqTranslationService {
       return {
         originalText: text,
         translatedText,
-        sourceLanguage: detectedSourceLang,
+        sourceLanguage: detectedSourceLang || 'unknown',
         targetLanguage,
         confidence: 0.9 // Groq generally provides high-quality translations
       };
@@ -148,13 +157,21 @@ export class GroqTranslationService {
   /**
    * Translate text with additional context for better accuracy
    */
-  async translateWithContext(
-    text: string,
-    targetLanguage: string,
-    context: string,
-    sourceLanguage?: string
-  ): Promise<TranslationResult> {
+  async translateWithContext(params: {
+    text: string;
+    targetLanguage: string;
+    sourceLanguage?: string;
+    context?: {
+      conversationId?: string;
+      senderId?: string;
+      recipientId?: string;
+      messageType?: string;
+      previousMessages?: Array<{text: string, sender: string}>;
+    };
+  }): Promise<TranslationResult> {
     try {
+      const { text, targetLanguage, sourceLanguage, context } = params;
+      
       let detectedSourceLang = sourceLanguage;
       if (!sourceLanguage) {
         const detection = await this.detectLanguage(text);
@@ -171,19 +188,36 @@ export class GroqTranslationService {
         };
       }
 
-      const sourceLanguageName = this.getLanguageName(detectedSourceLang);
+      const sourceLanguageName = this.getLanguageName(detectedSourceLang || 'en-US');
       const targetLanguageName = this.getLanguageName(targetLanguage);
+      
+      // Format context for the translation prompt
+      let contextString = '';
+      if (context) {
+        contextString = `Conversation ID: ${context.conversationId || 'N/A'}
+`;
+        if (context.messageType) {
+          contextString += `Message Type: ${context.messageType}
+`;
+        }
+        if (context.previousMessages && context.previousMessages.length > 0) {
+          contextString += 'Previous messages:\n';
+          context.previousMessages.forEach(msg => {
+            contextString += `- ${msg.sender}: ${msg.text}\n`;
+          });
+        }
+      }
 
       const completion = await groq.chat.completions.create({
         messages: [
           {
             role: 'system',
             content: `You are a professional translator specializing in ${sourceLanguageName} to ${targetLanguageName} translation.
-            Context: ${context}
-
-            Consider the context when translating to ensure accuracy and appropriate tone.
-            Return ONLY the translated text without explanations, quotes, or additional commentary.
-            Maintain the original meaning while adapting to the cultural context of the target language.`
+      This is a message in a chat application similar to WhatsApp.
+      
+      Return ONLY the translated text without explanations, quotes, or additional commentary.
+      Maintain the original meaning while adapting to the cultural context of the target language.
+      Preserve emojis, formatting, and punctuation as much as possible.`
           },
           {
             role: 'user',
@@ -200,7 +234,7 @@ export class GroqTranslationService {
       return {
         originalText: text,
         translatedText,
-        sourceLanguage: detectedSourceLang,
+        sourceLanguage: detectedSourceLang || 'unknown',
         targetLanguage,
         confidence: 0.95 // Higher confidence with context
       };
@@ -209,7 +243,7 @@ export class GroqTranslationService {
       console.error('[GroqTranslation] Context translation error:', error);
 
       // Fallback to regular translation
-      return this.translateText(text, targetLanguage, sourceLanguage);
+      return this.translateText(params.text, params.targetLanguage, params.sourceLanguage);
     }
   }
 

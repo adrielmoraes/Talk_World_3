@@ -1,3 +1,6 @@
+// Load environment variables first
+import "./env";
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -19,6 +22,9 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static('uploads'));
 
 app.use((req, res, next) => {
   const start = Date.now();

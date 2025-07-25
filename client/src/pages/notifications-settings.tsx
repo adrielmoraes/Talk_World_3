@@ -24,7 +24,7 @@ export default function NotificationsSettings() {
   const { data: settings } = useQuery({
     queryKey: ["/api/user/notification-settings"],
     enabled: !!localStorage.getItem("token"),
-  });
+  }) as { data?: { settings?: any } };
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (settingsData: any) => {
@@ -61,7 +61,7 @@ export default function NotificationsSettings() {
   });
 
   useEffect(() => {
-    if (settings?.settings) {
+    if (settings && settings.settings) {
       const s = settings.settings;
       setMessageNotifications(s.messageNotifications ?? true);
       setCallNotifications(s.callNotifications ?? true);
@@ -222,7 +222,19 @@ export default function NotificationsSettings() {
             onValueChange={(value) => handleSettingChange("notificationSound", value)}
           >
             <SelectTrigger>
-              <SelectValue />
+              {notificationSound && (
+                <div className="flex items-center space-x-1">
+                  <span>🔊</span>
+                  <span>
+                    {notificationSound === "default" ? "Padrão" :
+                     notificationSound === "chime" ? "Sino" :
+                     notificationSound === "ding" ? "Ding" :
+                     notificationSound === "pop" ? "Pop" :
+                     notificationSound === "whistle" ? "Assobio" :
+                     notificationSound}
+                  </span>
+                </div>
+              )}
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="default">Padrão</SelectItem>
@@ -244,7 +256,19 @@ export default function NotificationsSettings() {
             onValueChange={(value) => handleSettingChange("ringtone", value)}
           >
             <SelectTrigger>
-              <SelectValue />
+              {ringtone && (
+                <div className="flex items-center space-x-1">
+                  <span>🔔</span>
+                  <span>
+                    {ringtone === "default" ? "Padrão" :
+                     ringtone === "classic" ? "Clássico" :
+                     ringtone === "modern" ? "Moderno" :
+                     ringtone === "jazz" ? "Jazz" :
+                     ringtone === "electronic" ? "Eletrônico" :
+                     ringtone}
+                  </span>
+                </div>
+              )}
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="default">Padrão</SelectItem>

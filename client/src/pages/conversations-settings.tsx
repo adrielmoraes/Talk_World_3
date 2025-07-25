@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { ConversationSettings, ConversationSettingsResponse } from "@/types/api";
 
 export default function ConversationsSettings() {
   const [, setLocation] = useLocation();
@@ -21,13 +22,13 @@ export default function ConversationsSettings() {
   const [archiveOldMessages, setArchiveOldMessages] = useState(false);
   const [messageRetentionDays, setMessageRetentionDays] = useState("30");
 
-  const { data: settings } = useQuery({
+  const { data: settings } = useQuery<ConversationSettingsResponse>({
     queryKey: ["/api/user/conversation-settings"],
     enabled: !!localStorage.getItem("token"),
   });
 
   const updateSettingsMutation = useMutation({
-    mutationFn: async (settingsData: any) => {
+    mutationFn: async (settingsData: ConversationSettings) => {
       const token = localStorage.getItem("token");
       const response = await fetch("/api/user/conversation-settings", {
         method: "PATCH",
@@ -254,20 +255,7 @@ export default function ConversationsSettings() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span>Mecanismo de tradução:</span>
-                <span className="font-medium">Groq AI</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Idiomas suportados:</span>
-                <span className="font-medium">{supportedLanguages.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Detecção automática:</span>
-                <span className="font-medium">Habilitada</span>
-              </div>
-            </div>
+            {/* Conteúdo removido conforme solicitado */}
           </CardContent>
         </Card>
       </div>

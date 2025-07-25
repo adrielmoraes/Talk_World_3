@@ -17,6 +17,7 @@ import NotFoundPage from "./pages/not-found";
 import ConversationsSettings from "./pages/conversations-settings";
 import CallsSettings from "./pages/calls-settings";
 
+
 function Router() {
   return (
     <Switch>
@@ -67,6 +68,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <div className="min-h-screen bg-gray-50 dark:bg-whatsapp-dark">
+
           <Toaster />
           <Router />
         </div>

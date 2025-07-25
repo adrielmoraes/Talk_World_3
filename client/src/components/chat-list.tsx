@@ -9,21 +9,25 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import ContactSelector from "@/components/contact-selector";
+import type { ConversationsResponse } from "@/types/api";
 
 export default function ChatList() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewChatDialog, setShowNewChatDialog] = useState(false);
+  const [showContactSelector, setShowContactSelector] = useState(false);
   const [selectedChatFilter, setSelectedChatFilter] = useState("all");
 
-  const { data: conversations } = useQuery({
+  const { data: conversationsData } = useQuery<ConversationsResponse>({
     queryKey: ["/api/conversations"],
     enabled: !!localStorage.getItem("token"),
   });
+  
+  const conversations = conversationsData?.conversations;
 
   const handleNewChat = () => {
-    // Switch to contacts tab to select someone to chat with
-    setLocation("/app?tab=contacts");
+    setShowContactSelector(true);
     setShowNewChatDialog(false);
   };
 
@@ -31,15 +35,13 @@ export default function ChatList() {
     setLocation(`/chat/${conversationId}`);
   };
 
-  const filteredConversations = conversations?.conversations?.filter((conversation: any) => {
+  const filteredConversations = conversations?.filter((conversation) => {
     const matchesSearch = !searchQuery || 
       conversation.otherUser?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conversation.lastMessage?.text?.toLowerCase().includes(searchQuery.toLowerCase());
+      conversation.lastMessage?.originalText?.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesFilter = selectedChatFilter === "all" || 
-      (selectedChatFilter === "unread" && conversation.unreadCount > 0) ||
-      (selectedChatFilter === "archived" && conversation.isArchived) ||
-      (selectedChatFilter === "starred" && conversation.isStarred);
+      (selectedChatFilter === "unread" && (conversation.unreadCount || 0) > 0);
     
     return matchesSearch && matchesFilter;
   }) || [];
@@ -48,9 +50,32 @@ export default function ChatList() {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="bg-whatsapp-secondary text-white p-4">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           <h1 className="text-lg font-medium">Talk World</h1>
           <div className="flex space-x-2">
+            {searchQuery ? (
+              <div className="flex items-center w-64 transition-all duration-300 ease-in-out">
+                <Search className="absolute ml-3 h-4 w-4 text-gray-400 z-10" />
+                <Input
+                  placeholder="Pesquisar conversas..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 bg-whatsapp-elevated border-none text-white placeholder-gray-400 w-full"
+                  autoFocus
+                  onBlur={() => searchQuery.trim() === '' && setSearchQuery('')}
+                />
+              </div>
+            ) : (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-white hover:bg-whatsapp-primary" 
+                onClick={() => setSearchQuery(" ")}
+              >
+                <Search className="h-5 w-5" />
+              </Button>
+            )}
+            
             <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>
               <DialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="text-white hover:bg-whatsapp-primary">
@@ -63,18 +88,31 @@ export default function ChatList() {
                 </DialogHeader>
                 <div className="space-y-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Selecione um contato para iniciar uma nova conversa.
+                    Escolha como deseja iniciar uma nova conversa.
                   </p>
-                  <Button
-                    onClick={() => {
-                      setShowNewChatDialog(false);
-                      setLocation("/app?tab=contacts");
-                    }}
-                    className="w-full"
-                  >
-                    <Users className="h-4 w-4 mr-2" />
-                    Selecionar Contato
-                  </Button>
+                  <div className="space-y-2">
+                    <Button
+                      onClick={() => {
+                        setShowNewChatDialog(false);
+                        setShowContactSelector(true);
+                      }}
+                      className="w-full"
+                    >
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Selecionar Contato
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setShowNewChatDialog(false);
+                        setLocation("/app?tab=contacts");
+                      }}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Ver Todos os Contatos
+                    </Button>
+                  </div>
                 </div>
               </DialogContent>
             </Dialog>
@@ -102,23 +140,12 @@ export default function ChatList() {
             </DropdownMenu>
           </div>
         </div>
-        
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Pesquisar conversas..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 bg-whatsapp-elevated border-none text-white placeholder-gray-400"
-          />
-        </div>
       </div>
 
       {/* Chat List */}
       <div className="flex-1 overflow-y-auto">
         {filteredConversations.length > 0 ? (
-          filteredConversations.map((conversation: any) => (
+          filteredConversations.map((conversation) => (
             <div
               key={conversation.id}
               onClick={() => openChat(conversation.id)}
@@ -148,14 +175,14 @@ export default function ChatList() {
                       {conversation.otherUser?.username || "Usuário"}
                     </h3>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {conversation.lastMessage?.createdAt}
+                      {conversation.lastMessage?.createdAt && formatDistanceToNow(conversation.lastMessage.createdAt, { addSuffix: true, locale: ptBR })}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
                       {conversation.lastMessage?.originalText || "Iniciar conversa"}
                     </p>
-                    {conversation.unreadCount > 0 && (
+                    {(conversation.unreadCount || 0) > 0 && (
                       <span className="bg-whatsapp-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center ml-2">
                         {conversation.unreadCount}
                       </span>
@@ -185,6 +212,14 @@ export default function ChatList() {
           </div>
         )}
       </div>
+
+      {/* Contact Selector Dialog */}
+      <ContactSelector
+        open={showContactSelector}
+        onOpenChange={setShowContactSelector}
+        title="Nova Conversa"
+        actionType="chat"
+      />
 
       {/* New Chat FAB */}
       <Button

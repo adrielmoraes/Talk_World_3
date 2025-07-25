@@ -91,6 +91,35 @@ export function useWebSocket() {
             // Handle WebRTC signaling
             console.log("WebRTC signal:", message.signal);
             break;
+            
+          case "user_status":
+            // Handle user status updates (online/offline)
+            if (message.userId) {
+              // Dispatch a custom event that components can listen for
+              const statusEvent = new CustomEvent('user_status_update', {
+                detail: {
+                  userId: message.userId,
+                  isOnline: message.isOnline,
+                  lastSeen: message.lastSeen,
+                  lastActivity: message.lastActivity
+                }
+              });
+              window.dispatchEvent(statusEvent);
+            }
+            break;
+
+          case "user_activity":
+            // Handle user activity updates (typing, etc.)
+            const activityEvent = new CustomEvent('user_activity_update', {
+              detail: {
+                userId: message.userId,
+                activityType: message.activityType,
+                conversationId: message.conversationId,
+                isTyping: message.isTyping
+              }
+            });
+            window.dispatchEvent(activityEvent);
+            break;
 
           default:
             console.log("Unknown message type:", message.type);
@@ -146,6 +175,26 @@ export function useWebSocket() {
     }
   }, []);
 
+  const sendUserActivity = useCallback((activityType: string, conversationId?: number, metadata?: any) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'user_activity',
+        activityType,
+        conversationId,
+        metadata
+      }));
+    }
+  }, []);
+
+  const requestUserStatus = useCallback((userId: number) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'get_user_status',
+        userId
+      }));
+    }
+  }, []);
+
   const sendWebRTCSignal = useCallback((signal: any, targetUserId: number) => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
@@ -166,6 +215,8 @@ export function useWebSocket() {
     connect,
     disconnect,
     sendMessage,
+    sendUserActivity,
+    requestUserStatus,
     sendWebRTCSignal,
     isConnected: isConnectedRef.current,
   };

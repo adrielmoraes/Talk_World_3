@@ -9,6 +9,9 @@ import { queryClient } from "@/lib/queryClient";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useTranslation } from "@/hooks/use-translation";
 import { useToast } from "@/hooks/use-toast";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import type { ConversationResponse, MessagesResponse } from "@/types/api";
 
 export default function ChatScreen() {
   const [, setLocation] = useLocation();
@@ -16,7 +19,9 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { sendMessage, connect } = useWebSocket();
+  const { sendMessage, connect, isConnected, sendUserActivity, requestUserStatus } = useWebSocket();
+  // Adicionar referência ao WebSocket
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Ensure WebSocket is connected when chat opens
   useEffect(() => {
@@ -25,6 +30,7 @@ export default function ChatScreen() {
       connect(token);
     }
   }, [connect]);
+  
   const { 
     supportedLanguages,
     getLanguageName,
@@ -32,17 +38,73 @@ export default function ChatScreen() {
   } = useTranslation();
   const { toast } = useToast();
 
-  const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+  const currentUser = JSON.parse(localStorage.getItem("user") || "{}") as {
+    id: number;
+    username: string;
+    preferredLanguage?: string;
+    [key: string]: any;
+  };
 
-  const { data: conversation, isLoading: isLoadingConversation } = useQuery({
+  const { data: conversationData, isLoading: isLoadingConversation } = useQuery<ConversationResponse>({
     queryKey: ["/api/conversations", conversationId],
     enabled: !!conversationId,
   });
+  
+  const conversation = conversationData?.conversation;
 
-  const { data: messages, refetch: refetchMessages } = useQuery({
+  const [isOnline, setIsOnline] = useState(false);
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [otherUserTyping, setOtherUserTyping] = useState(false);
+  
+  // Listen for user status updates
+  useEffect(() => {
+    const handleStatusUpdate = (event: CustomEvent) => {
+      const { userId, isOnline: userIsOnline, lastSeen: userLastSeen } = event.detail;
+      
+      // Check if this update is for the user we're chatting with
+      if (conversation?.otherUser && userId === conversation.otherUser.id) {
+        setIsOnline(userIsOnline);
+        
+        if (!userIsOnline && userLastSeen) {
+          // Format the last seen time
+          const lastSeenDate = new Date(userLastSeen);
+          const formattedLastSeen = formatDistanceToNow(lastSeenDate, { addSuffix: true, locale: ptBR });
+          setLastSeen(formattedLastSeen);
+        }
+      }
+    };
+
+    const handleUserActivityUpdate = (event: CustomEvent) => {
+      const { userId, activityType, conversationId, isTyping: userTyping } = event.detail;
+      if (userId === conversation?.otherUser?.id && conversationId === parseInt(conversationId)) {
+        if (activityType === 'typing') {
+          setOtherUserTyping(userTyping);
+        }
+      }
+    };
+
+    // Add event listener
+    window.addEventListener('user_status_update', handleStatusUpdate as EventListener);
+    window.addEventListener('user_activity_update', handleUserActivityUpdate as EventListener);
+
+    // Request user status when component mounts
+    if (requestUserStatus && conversation?.otherUser?.id) {
+      requestUserStatus(conversation.otherUser.id);
+    }
+
+    return () => {
+      window.removeEventListener('user_status_update', handleStatusUpdate as EventListener);
+      window.removeEventListener('user_activity_update', handleUserActivityUpdate as EventListener);
+    };
+  }, [conversation?.otherUser?.id, requestUserStatus, conversationId]);
+
+  const { data: messagesData, refetch: refetchMessages } = useQuery<MessagesResponse>({
     queryKey: ["/api/conversations", conversationId, "messages"],
     enabled: !!conversationId,
   });
+  
+  const messages = messagesData?.messages;
 
   const [showOriginalText, setShowOriginalText] = useState(false);
 
@@ -87,6 +149,12 @@ export default function ChatScreen() {
       parsedConversationId: parseInt(conversationId)
     });
 
+    // Stop typing indicator
+    setIsTyping(false);
+    if (sendUserActivity) {
+      sendUserActivity('stopped_typing', parseInt(conversationId), { isTyping: false });
+    }
+
     // Send message without manual translation - backend handles automatic translation
     sendMessage({
       conversationId: parseInt(conversationId),
@@ -94,6 +162,20 @@ export default function ChatScreen() {
     });
 
     setMessageText("");
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setMessageText(value);
+    
+    // Handle typing indicator
+    if (value.trim() && !isTyping && conversationId && sendUserActivity) {
+      setIsTyping(true);
+      sendUserActivity('typing', parseInt(conversationId), { isTyping: true });
+    } else if (!value.trim() && isTyping && conversationId && sendUserActivity) {
+      setIsTyping(false);
+      sendUserActivity('stopped_typing', parseInt(conversationId), { isTyping: false });
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -114,8 +196,6 @@ export default function ChatScreen() {
   const goBack = () => {
     setLocation("/app");
   };
-
-  const otherUser = conversation?.otherUser;
 
   // Show loading state
   if (isLoadingConversation) {
@@ -151,6 +231,9 @@ export default function ChatScreen() {
       </div>
     );
   }
+  
+  // Definir otherUser após verificar que conversation existe
+  const otherUser = conversation?.otherUser;
 
   return (
     <div className="h-screen bg-white dark:bg-whatsapp-dark flex flex-col">
@@ -165,6 +248,12 @@ export default function ChatScreen() {
               src={otherUser.profilePhoto}
               alt={`${otherUser.username}'s profile`}
               className="w-10 h-10 rounded-full object-cover mr-3"
+              onError={(e) => {
+                // Fallback if image fails to load
+                e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                  conversation?.otherUser?.contactName || otherUser?.username || '?'
+                )}&background=128C7E&color=fff`;
+              }}
             />
           ) : (
             <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-medium mr-3">
@@ -173,9 +262,13 @@ export default function ChatScreen() {
           )}
           <div>
             <h3 className="font-medium">
-              {conversation?.otherUser?.username || otherUser?.username || "Usuário"}
+              {conversation?.otherUser?.contactName || conversation?.otherUser?.username || otherUser?.username || "Usuário"}
             </h3>
-            <p className="text-xs opacity-80">online</p>
+            <p className="text-xs opacity-80">
+                {otherUserTyping ? 'digitando...' : 
+                 isOnline ? 'online' : 
+                 lastSeen ? `visto por último ${lastSeen}` : 'offline'}
+              </p>
           </div>
         </div>
         <div className="flex space-x-4">
@@ -199,22 +292,7 @@ export default function ChatScreen() {
         </div>
       </div>
 
-      {/* Translation Status Bar */}
-      <div className="bg-blue-50 dark:bg-blue-900 dark:bg-opacity-20 border-b border-blue-200 dark:border-blue-700 p-3">
-        <div className="flex items-center justify-center">
-          <div className="flex items-center">
-            <Languages className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2" />
-            <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
-              Tradução automática ativa
-            </span>
-            {otherUser?.preferredLanguage && (
-              <Badge variant="secondary" className="ml-2 text-xs">
-                {getLanguageFlag(otherUser.preferredLanguage)} {getLanguageName(otherUser.preferredLanguage)}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Translation Status Bar removed */}
 
       {/* Messages Area */}
       <div 
@@ -223,69 +301,104 @@ export default function ChatScreen() {
           backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23f0f0f0' fill-opacity='0.1'%3E%3Ccircle cx='30' cy='30' r='4'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
         }}
       >
-        {messages?.messages?.map((message: any) => {
+        {messages && messages.length > 0 ? messages.map((message: any) => {
           const isOwn = message.senderId === currentUser.id;
 
           return (
-            <div key={message.id} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
+            <div key={message.id} className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-2`}>
               <div className="max-w-xs lg:max-w-md">
-                <div className={`p-3 rounded-lg shadow-sm ${
+                <div className={`p-4 rounded-2xl shadow-md transition-all duration-200 hover:shadow-lg ${
                   isOwn 
-                    ? "bg-whatsapp-light dark:bg-whatsapp-primary dark:bg-opacity-80" 
-                    : "bg-white dark:bg-whatsapp-elevated"
+                    ? "bg-gradient-to-br from-green-200 to-green-200 text-black" 
+                    : "bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-300"
                 }`}>
-                  {/* Texto principal baseado no usuário */}
-                  <div className="text-sm text-gray-800 dark:text-white mb-1">
-                    {isOwn 
-                      ? (message.originalText || message.text) // Remetente vê original
-                      : (message.translatedText || message.originalText || message.text) // Destinatário vê traduzido
-                    }
+                  {/* Texto principal */}
+                  <div className={`text-sm leading-relaxed relative ${
+                    isOwn ? "text-black" : "text-black"
+                  }`}>
+                    <div className="pr-16">
+                      {/* Texto sempre em preto */}
+                      {isOwn ? (
+                        <span className="text-black">
+                          {message.originalText || message.text}
+                        </span>
+                      ) : (
+                        <span className="text-black">
+                          {message.translatedText || message.originalText || message.text}
+                        </span>
+                      )}
+                    </div>
+                    <div className="absolute bottom-0 right-0 transform translate-y-[15%]">
+                      <span className="inline-flex items-center space-x-1">
+                        <span className={`text-xs leading-none ${
+                          isOwn 
+                            ? "text-black opacity-70" 
+                            : "text-gray-500 dark:text-gray-400 opacity-70"
+                        }`}>
+                          {new Date(message.createdAt).toLocaleTimeString('pt-BR', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </span>
+                        {isOwn && (
+                          <div className="flex items-center">
+                            {message.isRead ? (
+                              <div className="text-blue-700 text-sm leading-none flex" title={`Lida ${message.readAt ? new Date(message.readAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}`}>
+                                <svg width="16" height="12" viewBox="0 0 16 12" className="fill-current">
+                                  <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L3.724 9.587a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z"/>
+                                </svg>
+                              </div>
+                            ) : message.isDelivered ? (
+                              <div className="text-gray-700 text-sm leading-none flex" title={`Entregue ${message.deliveredAt ? new Date(message.deliveredAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}`}>
+                                <svg width="16" height="12" viewBox="0 0 16 12" className="fill-current">
+                                  <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L3.724 9.587a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z"/>
+                                </svg>
+                              </div>
+                            ) : (
+                              <div className="text-gray-700 text-sm leading-none flex" title="Enviada">
+                                <svg width="16" height="12" viewBox="0 0 16 12" className="fill-current">
+                                  <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z"/>
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Texto alternativo (quando ativado) */}
                   {showOriginalText && message.translatedText && message.originalText && 
                    message.translatedText !== message.originalText && (
-                    <div className="text-sm text-gray-600 dark:text-gray-300 italic border-t border-gray-100 dark:border-gray-600 pt-2 mt-2">
-                      <span className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                    <div className={`text-sm italic border-t pt-2 mt-2 ${
+                      isOwn 
+                        ? "border-green-600" 
+                        : "border-gray-400 dark:border-gray-200"
+                    }`}>
+                      <span className={`text-xs block mb-1 ${
+                        isOwn 
+                          ? "text-black opacity-70" 
+                          : "text-black opacity-70"
+                      }`}>
                         {isOwn ? "Texto traduzido:" : "Texto original:"}
                       </span>
-                      {isOwn 
-                        ? message.translatedText // Remetente vê tradução quando ativado
-                        : message.originalText   // Destinatário vê original quando ativado
-                      }
+                      <span className={`${
+                        isOwn 
+                          ? "text-black opacity-70" // Texto traduzido com 70% opacidade
+                          : "text-black" // Texto original mantém cor normal
+                      }`}>
+                        {isOwn 
+                          ? message.translatedText // Remetente vê tradução quando ativado
+                          : message.originalText   // Destinatário vê original quando ativado
+                        }
+                      </span>
                     </div>
                   )}
-
-                  <div className="flex items-center justify-end space-x-1 mt-1">
-                    <span className="text-xs text-gray-600 dark:text-gray-300">
-                      {new Date(message.createdAt).toLocaleTimeString('pt-BR', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </span>
-                    {isOwn && (
-                      <div className="text-xs flex items-center">
-                        {message.isRead ? (
-                          <span className="text-blue-500" title={`Lida ${message.readAt ? new Date(message.readAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}`}>
-                            ✓✓
-                          </span>
-                        ) : message.isDelivered ? (
-                          <span className="text-gray-600 dark:text-gray-400" title={`Entregue ${message.deliveredAt ? new Date(message.deliveredAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}`}>
-                            ✓✓
-                          </span>
-                        ) : (
-                          <span className="text-gray-400" title="Enviada">
-                            ✓
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>
           );
-        })}
+        }) : null}
         <div ref={messagesEndRef} />
       </div>
 
@@ -295,7 +408,7 @@ export default function ChatScreen() {
           <div className="flex-1 relative">
             <Input
               value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
+              onChange={handleInputChange}
               onKeyPress={handleKeyPress}
               placeholder={otherUser?.preferredLanguage ? 
                 `Digite em qualquer idioma, será traduzido para ${getLanguageName(otherUser.preferredLanguage)}` : 
