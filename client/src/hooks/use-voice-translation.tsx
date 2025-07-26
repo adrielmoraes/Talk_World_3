@@ -1,40 +1,46 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket } from './use-websocket';
-import { apiRequest } from '@/lib/queryClient';
 
-export interface VoiceTranslationResult {
+interface VoiceTranslationResult {
   originalText: string;
   translatedText: string;
   sourceLanguage: string;
   targetLanguage: string;
-  timestamp: number;
-  userId: number;
+  audioBuffer?: string; // base64 encoded audio
+  fromUserId: number;
   conversationId: number;
+  timestamp: string;
 }
 
-export interface UseVoiceTranslationProps {
+interface UseVoiceTranslationProps {
   conversationId: number;
-  targetLanguage?: string;
-  enabled?: boolean;
+  targetUserId: number;
+  targetLanguage: string;
+  isEnabled: boolean;
 }
 
 export function useVoiceTranslation({
   conversationId,
-  targetLanguage = 'en-US',
-  enabled = true
+  targetUserId,
+  targetLanguage,
+  isEnabled
 }: UseVoiceTranslationProps) {
   const [isRecording, setIsRecording] = useState(false);
-  const [translations, setTranslations] = useState<VoiceTranslationResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [lastTranslation, setLastTranslation] = useState<VoiceTranslationResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sequenceNumber, setSequenceNumber] = useState(0);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const { socket } = useWebSocket();
+  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const webSocket = useWebSocket();
 
-  const CHUNK_DURATION = 3000; // 3 seconds
-  const SILENCE_THRESHOLD = 0.01;
+  const CHUNK_DURATION = 4000; // 4 seconds for better accuracy
+  const SILENCE_THRESHOLD = 0.02; // Improved threshold for voice activity detection
+  const MIN_CHUNK_SIZE = 8000; // Minimum chunk size in bytes
+  const MAX_CONCURRENT_PROCESSING = 2; // Limit concurrent processing
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -52,35 +58,32 @@ export function useVoiceTranslation({
 
   // Start recording audio for voice translation
   const startRecording = useCallback(async () => {
-    if (!enabled || isRecording) return;
+    if (!isEnabled || isRecording) return;
 
     try {
-      await initializeAudioContext();
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      setIsRecording(true);
+      audioChunksRef.current = [];
+      setError(null);
+
+      // Get user media with optimized audio settings for voice translation
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 16000,
+          sampleRate: 16000, // Whisper's preferred sample rate
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-        } 
+        },
       });
-      
+
       streamRef.current = stream;
 
-      // Connect audio stream to analyser for voice activity detection
-      if (audioContextRef.current && analyserRef.current) {
-        const source = audioContextRef.current.createMediaStreamSource(stream);
-        source.connect(analyserRef.current);
-      }
-
+      // Set up MediaRecorder with optimized settings
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
+        mimeType: 'audio/webm;codecs=opus',
       });
       
       mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -94,46 +97,44 @@ export function useVoiceTranslation({
         }
       };
 
+      // Start recording
       mediaRecorder.start();
-      setIsRecording(true);
 
-      // Start periodic chunk processing
-      startChunkProcessing();
+      // Process chunks every 2 seconds
+      const processChunks = () => {
+        if (isRecording && mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.stop();
+          
+          // Restart recording for continuous capture
+          setTimeout(() => {
+            if (isRecording && streamRef.current) {
+              const newRecorder = new MediaRecorder(streamRef.current, {
+                mimeType: 'audio/webm;codecs=opus',
+              });
+              
+              newRecorder.ondataavailable = mediaRecorder.ondataavailable;
+              newRecorder.onstop = mediaRecorder.onstop;
+              
+              mediaRecorderRef.current = newRecorder;
+              newRecorder.start();
+              
+              setTimeout(processChunks, 2000);
+            }
+          }, 100);
+        }
+      };
+
+      setTimeout(processChunks, 2000);
 
       console.log('[VoiceTranslation] Recording started');
     } catch (error) {
       console.error('[VoiceTranslation] Failed to start recording:', error);
+      setIsRecording(false);
+      setError('Erro ao iniciar gravação');
     }
-  }, [enabled, isRecording, conversationId, targetLanguage]);
+  }, [isEnabled, isRecording, conversationId, targetLanguage]);
 
-  // Start processing audio chunks periodically
-  const startChunkProcessing = useCallback(() => {
-    const processChunk = async () => {
-      if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
-        return;
-      }
 
-      // Check for voice activity
-      const hasVoiceActivity = detectVoiceActivity();
-      
-      if (hasVoiceActivity && audioChunksRef.current.length > 0) {
-        // Stop current recording to get chunks
-        mediaRecorderRef.current.stop();
-        
-        // Start new recording immediately for continuous capture
-        setTimeout(() => {
-          if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.start();
-          }
-        }, 100);
-      }
-
-      // Schedule next chunk processing
-      chunkTimerRef.current = setTimeout(processChunk, CHUNK_DURATION);
-    };
-
-    chunkTimerRef.current = setTimeout(processChunk, CHUNK_DURATION);
-  }, [isRecording]);
 
   // Detect voice activity using audio analysis
   const detectVoiceActivity = useCallback((): boolean => {
@@ -155,6 +156,8 @@ export function useVoiceTranslation({
     if (audioChunksRef.current.length === 0 || isProcessing) return;
 
     setIsProcessing(true);
+    const currentSeq = sequenceNumber;
+    setSequenceNumber(prev => prev + 1);
 
     try {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
@@ -165,44 +168,47 @@ export function useVoiceTranslation({
         return;
       }
 
-      // Convert blob to FormData
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'audio.webm');
-      formData.append('conversationId', conversationId.toString());
-      formData.append('targetLanguage', targetLanguage);
+      // Convert blob to base64
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const base64Audio = btoa(String.fromCharCode(...Array.from(uint8Array)));
 
-      // Send to voice translation API
-      const response = await fetch('/api/voice/translate', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: formData,
-      });
+      // Send audio chunk via WebSocket
+      webSocket.sendVoiceAudioChunk(
+        base64Audio,
+        conversationId,
+        targetUserId,
+        targetLanguage,
+        currentSeq
+      );
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.translation) {
-          const translation = result.translation;
-          setTranslations(prev => [...prev, translation]);
-          
-          // Generate and play TTS for translated text
-          if (translation.translatedText && translation.translatedText.trim().length > 0) {
-            generateAndPlaySpeech(translation.translatedText, translation.targetLanguage);
-          }
-        }
+      // Set timeout for processing
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
       }
+      
+      processingTimeoutRef.current = setTimeout(() => {
+        setIsProcessing(false);
+        setError('Timeout na tradução de voz');
+      }, 10000); // 10 second timeout
+
     } catch (error) {
       console.error('[VoiceTranslation] Error processing audio chunks:', error);
-    } finally {
+      setError('Erro ao processar áudio');
       setIsProcessing(false);
     }
-  }, [conversationId, targetLanguage, isProcessing]);
+  }, [conversationId, targetUserId, targetLanguage, sequenceNumber, webSocket, isProcessing]);
 
   // Generate and play speech using TTS
   const generateAndPlaySpeech = useCallback(async (text: string, language: string) => {
     try {
-      console.log('[VoiceTranslation] Generating speech for:', text, 'in', language);
+      // Skip TTS for very short or empty text
+      if (!text || text.trim().length < 3) {
+        console.log('[VoiceTranslation] Skipping TTS for short text:', text);
+        return;
+      }
+
+      console.log(`[VoiceTranslation] Generating TTS for: "${text.substring(0, 50)}..."`);
       
       const response = await fetch('/api/voice/tts', {
         method: 'POST',
@@ -211,34 +217,56 @@ export function useVoiceTranslation({
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({
-          text: text,
-          language: language,
+          text: text.trim(),
+          language,
+          conversationId,
+          quality: 'high', // Request high quality TTS
         }),
       });
 
       if (response.ok) {
         const audioBlob = await response.blob();
+        
+        // Validate audio blob
+        if (audioBlob.size === 0) {
+          console.warn('[VoiceTranslation] Received empty audio blob');
+          return;
+        }
+        
         const audioUrl = URL.createObjectURL(audioBlob);
         
-        // Create audio element if it doesn't exist
+        // Create or reuse audio element
         if (!audioRef.current) {
           audioRef.current = new Audio();
+          audioRef.current.preload = 'auto';
         }
         
         audioRef.current.src = audioUrl;
-        audioRef.current.play().catch(error => {
-          console.error('[VoiceTranslation] Audio playback error:', error);
-        });
         
-        // Clean up URL after playback
+        try {
+          await audioRef.current.play();
+          console.log('[VoiceTranslation] TTS audio played successfully');
+        } catch (playError) {
+          console.error('[VoiceTranslation] Error playing TTS audio:', playError);
+        }
+        
+        // Clean up URL after playing
         audioRef.current.onended = () => {
           URL.revokeObjectURL(audioUrl);
         };
+        
+        // Also clean up on error
+        audioRef.current.onerror = () => {
+          URL.revokeObjectURL(audioUrl);
+          console.error('[VoiceTranslation] Audio playback error');
+        };
+      } else {
+        console.error('[VoiceTranslation] TTS API error:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('[VoiceTranslation] TTS error:', error);
     }
-  }, []);
+  }, [conversationId]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -246,14 +274,13 @@ export function useVoiceTranslation({
 
     setIsRecording(false);
 
-    // Clear chunk timer
-    if (chunkTimerRef.current) {
-      clearTimeout(chunkTimerRef.current);
-      chunkTimerRef.current = null;
+    if (processingTimeoutRef.current) {
+      clearTimeout(processingTimeoutRef.current);
+      processingTimeoutRef.current = null;
     }
 
     // Stop media recorder
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
 
@@ -269,69 +296,90 @@ export function useVoiceTranslation({
       audioContextRef.current = null;
     }
 
+    mediaRecorderRef.current = null;
     console.log('[VoiceTranslation] Recording stopped');
   }, [isRecording]);
 
-  // Listen for incoming voice translations via WebSocket
+  // Listen for voice translation results
   useEffect(() => {
-    if (!socket) return;
-
-    const handleVoiceTranslation = (data: any) => {
-      if (data.type === 'voice_translation' && data.conversationId === conversationId) {
-        const translation: VoiceTranslationResult = {
-          originalText: data.originalText,
-          translatedText: data.translatedText,
-          sourceLanguage: data.sourceLanguage,
-          targetLanguage: data.targetLanguage,
-          timestamp: data.timestamp,
-          userId: data.fromUserId,
-          conversationId: data.conversationId,
-        };
+    const handleVoiceTranslationResult = (event: CustomEvent) => {
+      const result = event.detail as VoiceTranslationResult;
+      if (result.conversationId === conversationId) {
+        setLastTranslation(result);
+        setIsProcessing(false);
         
-        setTranslations(prev => [...prev, translation]);
+        // Play translated audio if available
+        if (result.audioBuffer) {
+          playTranslatedAudio(result.audioBuffer);
+        }
       }
     };
 
-    socket.addEventListener('message', (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        handleVoiceTranslation(data);
-      } catch (error) {
-        // Ignore non-JSON messages
+    const handleVoiceTranslationProcessed = (event: CustomEvent) => {
+      const { conversationId: msgConversationId, success, error: processError } = event.detail;
+      if (msgConversationId === conversationId) {
+        if (!success && processError) {
+          setError(processError);
+          setIsProcessing(false);
+        }
       }
-    });
+    };
 
+    window.addEventListener('voice_translation_result', handleVoiceTranslationResult as EventListener);
+    window.addEventListener('voice_translation_processed', handleVoiceTranslationProcessed as EventListener);
+    
     return () => {
-      // WebSocket cleanup handled by useWebSocket hook
+      window.removeEventListener('voice_translation_result', handleVoiceTranslationResult as EventListener);
+      window.removeEventListener('voice_translation_processed', handleVoiceTranslationProcessed as EventListener);
     };
-  }, [socket, conversationId]);
-
-  // Cleanup on unmount or conversation change
-  useEffect(() => {
-    return () => {
-      stopRecording();
-      
-      // Send cleanup signal via WebSocket
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          type: 'call_cleanup',
-          conversationId,
-        }));
-      }
-    };
-  }, [conversationId, stopRecording]);
-
-  // Clear translations when conversation changes
-  useEffect(() => {
-    setTranslations([]);
   }, [conversationId]);
+
+  // Play translated audio
+  const playTranslatedAudio = useCallback((audioBuffer: string) => {
+    try {
+      const audioData = atob(audioBuffer);
+      const arrayBuffer = new ArrayBuffer(audioData.length);
+      const view = new Uint8Array(arrayBuffer);
+      for (let i = 0; i < audioData.length; i++) {
+        view[i] = audioData.charCodeAt(i);
+      }
+      
+      const audioBlob = new Blob([arrayBuffer], { type: 'audio/wav' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      
+      audio.play().catch(error => {
+        console.error('Error playing translated audio:', error);
+      });
+      
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+      };
+    } catch (error) {
+      console.error('Error processing translated audio:', error);
+    }
+  }, []);
+
+  // Cleanup on unmount or when disabled
+  useEffect(() => {
+    return () => {
+      if (isRecording) {
+        stopRecording();
+      }
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
+      webSocket.sendUserActivity('call_cleanup', conversationId);
+    };
+  }, [conversationId, isRecording]);
 
   return {
     isRecording,
     isProcessing,
-    translations,
+    lastTranslation,
+    error,
     startRecording,
     stopRecording,
-    clearTranslations: () => setTranslations([]),
+    clearError: () => setError(null),
   };
 }

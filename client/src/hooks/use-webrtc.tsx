@@ -13,14 +13,59 @@ export function useWebRTC() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const { sendWebRTCSignal } = useWebSocket();
 
+  // Check if browser supports required APIs
+  const checkBrowserSupport = useCallback(() => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Seu navegador não suporta acesso ao microfone. Por favor, use um navegador mais recente.');
+    }
+    
+    if (!window.RTCPeerConnection) {
+      throw new Error('Seu navegador não suporta chamadas de voz. Por favor, use um navegador mais recente.');
+    }
+  }, []);
+
+  // Request microphone permission
+  const requestMicrophonePermission = useCallback(async () => {
+    try {
+      // Check if permission is already granted
+      const permission = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      
+      if (permission.state === 'denied') {
+        throw new Error('Permissão para usar o microfone foi negada. Por favor, permita o acesso ao microfone nas configurações do navegador.');
+      }
+      
+      // Request access to microphone
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }, 
+        video: false 
+      });
+      
+      return stream;
+    } catch (error: any) {
+      if (error.name === 'NotAllowedError') {
+        throw new Error('Permissão para usar o microfone foi negada. Por favor, clique no ícone de microfone na barra de endereços e permita o acesso.');
+      } else if (error.name === 'NotFoundError') {
+        throw new Error('Nenhum microfone foi encontrado. Por favor, conecte um microfone e tente novamente.');
+      } else if (error.name === 'NotReadableError') {
+        throw new Error('Microfone está sendo usado por outro aplicativo. Por favor, feche outros aplicativos que possam estar usando o microfone.');
+      } else {
+        throw new Error(`Erro ao acessar o microfone: ${error.message}`);
+      }
+    }
+  }, []);
+
   // Initialize WebRTC
   const initializeWebRTC = useCallback(async () => {
     try {
-      // Get user media (audio only for voice calls)
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: true, 
-        video: false 
-      });
+      // Check browser support
+      checkBrowserSupport();
+      
+      // Request microphone permission and get stream
+      const stream = await requestMicrophonePermission();
       
       setLocalStream(stream);
 
@@ -64,10 +109,19 @@ export function useWebRTC() {
         }
       };
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error initializing WebRTC:", error);
+      // Dispatch custom event for UI to handle the error
+      const errorEvent = new CustomEvent('webrtc_error', {
+        detail: {
+          message: error.message || 'Erro desconhecido ao inicializar chamada de voz',
+          type: error.name || 'UnknownError'
+        }
+      });
+      window.dispatchEvent(errorEvent);
+      throw error;
     }
-  }, []);
+  }, [checkBrowserSupport, requestMicrophonePermission]);
 
   const startCall = useCallback(async (targetUserId: number) => {
     await initializeWebRTC();

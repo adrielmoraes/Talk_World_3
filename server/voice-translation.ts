@@ -1,79 +1,91 @@
 import OpenAI from 'openai';
-import FormData from 'form-data';
-import { Readable } from 'stream';
 import { groqTranslationService } from './groq-translation';
-
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_API_URL = process.env.OPENAI_API_URL;
-const WHISPER_MODEL = process.env.WHISPER_MODEL || 'whisper-1';
-const COQUI_TTS_API_URL = process.env.COQUI_TTS_API_URL;
-const COQUI_TTS_MODEL = process.env.COQUI_TTS_MODEL || 'tts_models/multilingual/multi-dataset/xtts_v2';
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_API_URL = process.env.ELEVENLABS_API_URL;
-
-if (!OPENAI_API_KEY) {
-  throw new Error('OPENAI_API_KEY is required in environment variables');
-}
+import FormData from 'form-data';
+import fetch from 'node-fetch';
 
 const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-  baseURL: OPENAI_API_URL,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-export interface VoiceTranslationChunk {
+// Voice service configuration
+const WHISPER_STT_SERVER_URL = process.env.WHISPER_STT_SERVER_URL || 'http://localhost:5001';
+const WHISPER_STT_ENABLED = process.env.WHISPER_STT_ENABLED === 'true';
+const COQUI_TTS_SERVER_URL = process.env.COQUI_TTS_SERVER_URL || 'http://localhost:5002';
+const COQUI_TTS_ENABLED = process.env.COQUI_TTS_ENABLED === 'true';
+
+interface VoiceTranslationResult {
   originalText: string;
   translatedText: string;
   sourceLanguage: string;
   targetLanguage: string;
-  timestamp: number;
-  userId: number;
-  conversationId: number;
+  audioBuffer?: Buffer;
+  timestamp: string;
 }
 
-export class VoiceTranslationService {
-  private audioChunks: Map<string, Buffer[]> = new Map();
-  private chunkTimers: Map<string, NodeJS.Timeout> = new Map();
-  private readonly CHUNK_DURATION = 3000; // 3 seconds
-  private readonly OVERLAP_DURATION = 500; // 0.5 seconds overlap
+interface AudioChunk {
+  data: Buffer;
+  timestamp: number;
+  sequenceNumber: number;
+}
 
-  constructor() {
-    console.log('[VoiceTranslation] Service initialized');
-  }
+class VoiceTranslationService {
+  private audioChunks = new Map<string, AudioChunk[]>();
+  private chunkTimers = new Map<string, NodeJS.Timeout>();
+  private processingQueue = new Map<string, boolean>();
+  private readonly CHUNK_TIMEOUT = 2000; // 2 seconds
+  private readonly MAX_CHUNK_SIZE = 1024 * 1024; // 1MB
+  private readonly SAMPLE_RATE = 16000;
+  private readonly CHANNELS = 1;
+  private readonly BITS_PER_SAMPLE = 16;
 
   /**
-   * Process audio chunk from WebRTC stream
+   * Process audio chunk for real-time voice translation
    */
   async processAudioChunk(
-    audioBuffer: Buffer,
     userId: number,
     conversationId: number,
-    targetLanguage: string = 'en-US'
-  ): Promise<VoiceTranslationChunk | null> {
+    audioData: Buffer,
+    targetLanguage: string,
+    sequenceNumber: number = 0
+  ): Promise<VoiceTranslationResult | null> {
+    const chunkKey = `${userId}_${conversationId}`;
+    
     try {
-      const chunkKey = `${userId}_${conversationId}`;
-
-      // Initialize chunk storage for this user/conversation
+      // Initialize chunk array if not exists
       if (!this.audioChunks.has(chunkKey)) {
         this.audioChunks.set(chunkKey, []);
       }
 
-      // Add audio chunk to buffer
       const chunks = this.audioChunks.get(chunkKey)!;
-      chunks.push(audioBuffer);
+      
+      // Add new chunk
+      chunks.push({
+        data: audioData,
+        timestamp: Date.now(),
+        sequenceNumber
+      });
 
       // Clear existing timer
       if (this.chunkTimers.has(chunkKey)) {
         clearTimeout(this.chunkTimers.get(chunkKey)!);
       }
 
-      // Set timer to process accumulated chunks
+      // Set new timer for processing
       const timer = setTimeout(async () => {
-        await this.processAccumulatedChunks(chunkKey, userId, conversationId, targetLanguage);
-      }, this.CHUNK_DURATION);
+        await this.processAccumulatedChunks(userId, conversationId, targetLanguage);
+      }, this.CHUNK_TIMEOUT);
 
       this.chunkTimers.set(chunkKey, timer);
 
-      return null; // Return null for intermediate chunks
+      // Check if we should process immediately (large chunk or many chunks)
+      const totalSize = chunks.reduce((sum, chunk) => sum + chunk.data.length, 0);
+      if (totalSize >= this.MAX_CHUNK_SIZE || chunks.length >= 10) {
+        clearTimeout(timer);
+        this.chunkTimers.delete(chunkKey);
+        return await this.processAccumulatedChunks(userId, conversationId, targetLanguage);
+      }
+
+      return null;
     } catch (error) {
       console.error('[VoiceTranslation] Error processing audio chunk:', error);
       return null;
@@ -81,99 +93,164 @@ export class VoiceTranslationService {
   }
 
   /**
-   * Process accumulated audio chunks for transcription and translation
+   * Process accumulated audio chunks
    */
   private async processAccumulatedChunks(
-    chunkKey: string,
     userId: number,
     conversationId: number,
     targetLanguage: string
-  ): Promise<VoiceTranslationChunk | null> {
+  ): Promise<VoiceTranslationResult | null> {
+    const chunkKey = `${userId}_${conversationId}`;
+    
+    // Prevent concurrent processing
+    if (this.processingQueue.get(chunkKey)) {
+      return null;
+    }
+    
+    this.processingQueue.set(chunkKey, true);
+    
     try {
       const chunks = this.audioChunks.get(chunkKey);
       if (!chunks || chunks.length === 0) {
         return null;
       }
 
-      // Combine audio chunks into a single buffer
-      const combinedBuffer = Buffer.concat(chunks);
+      // Sort chunks by sequence number
+      chunks.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
-      // Clear chunks for next batch (keep some overlap)
-      const overlapChunks = chunks.slice(-1); // Keep last chunk for overlap
-      this.audioChunks.set(chunkKey, overlapChunks);
-
-      // Create WAV header for the audio buffer
-      const wavBuffer = this.createWavBuffer(combinedBuffer);
-
-      // Transcribe audio using Whisper
-      const transcription = await this.transcribeAudio(wavBuffer);
-
-      if (!transcription || transcription.trim().length === 0) {
+      // Combine all audio chunks
+      const combinedAudio = Buffer.concat(chunks.map(chunk => chunk.data));
+      
+      // Clear processed chunks
+      this.audioChunks.set(chunkKey, []);
+      
+      // Create WAV file from PCM data
+      const wavBuffer = this.createWavBuffer(combinedAudio);
+      
+      console.log(`[VoiceTranslation] Processing ${combinedAudio.length} bytes of audio for user ${userId}`);
+      
+      // Step 1: Speech-to-Text (Whisper)
+      const transcriptionResult = await this.transcribeAudio(wavBuffer);
+      if (!transcriptionResult || !transcriptionResult.text.trim()) {
+        console.log('[VoiceTranslation] No speech detected in audio');
         return null;
       }
 
-      console.log('[VoiceTranslation] Transcribed:', transcription);
-
-      // Use Groq API for language detection and translation
-      const translation = await groqTranslationService.translateText(
-        transcription,
-        targetLanguage
-      );
-
-      return {
-        originalText: translation.originalText,
-        translatedText: translation.translatedText,
-        sourceLanguage: translation.sourceLanguage,
-        targetLanguage: translation.targetLanguage,
-        timestamp: Date.now(),
-        userId,
-        conversationId,
+      const originalText = transcriptionResult.text.trim();
+      const sourceLanguage = transcriptionResult.language || 'auto';
+      
+      console.log(`[VoiceTranslation] Transcribed: "${originalText}" (${sourceLanguage})`);
+      
+      // Step 2: Translation (Groq API)
+      let translatedText = originalText;
+      if (sourceLanguage !== targetLanguage) {
+        try {
+          const translation = await groqTranslationService.translateWithContext({
+            text: originalText,
+            sourceLanguage,
+            targetLanguage,
+            context: {
+              conversationId: conversationId.toString(),
+              senderId: userId.toString(),
+              messageType: 'voice',
+              previousMessages: []
+            }
+          });
+          
+          if (translation && translation.translatedText) {
+            translatedText = translation.translatedText;
+            console.log(`[VoiceTranslation] Translated: "${translatedText}"`);
+          }
+        } catch (error) {
+          console.error('[VoiceTranslation] Translation error:', error);
+        }
+      }
+      
+      // Step 3: Text-to-Speech (Coqui TTS)
+      const audioBuffer = await this.generateSpeech(translatedText, targetLanguage);
+      
+      const result: VoiceTranslationResult = {
+        originalText,
+        translatedText,
+        sourceLanguage,
+        targetLanguage,
+        audioBuffer: audioBuffer || undefined,
+        timestamp: new Date().toISOString()
       };
-
+      
+      console.log(`[VoiceTranslation] Voice translation completed for user ${userId}`);
+      return result;
+      
     } catch (error) {
       console.error('[VoiceTranslation] Error processing accumulated chunks:', error);
       return null;
+    } finally {
+      this.processingQueue.set(chunkKey, false);
     }
   }
 
   /**
-   * Transcribe audio using OpenAI Whisper
+   * Transcribe audio using local Whisper STT or OpenAI fallback
    */
-  private async transcribeAudio(audioBuffer: Buffer): Promise<string | null> {
+  private async transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; language?: string } | null> {
     try {
-      // Create a readable stream from buffer
-      const audioStream = new Readable({
-        read() {
-          this.push(audioBuffer);
-          this.push(null);
+      // Try local Whisper STT first
+      if (WHISPER_STT_ENABLED) {
+        try {
+          const formData = new FormData();
+          formData.append('audio', audioBuffer, {
+            filename: 'audio.wav',
+            contentType: 'audio/wav'
+          });
+
+          const response = await fetch(`${WHISPER_STT_SERVER_URL}/api/stt`, {
+            method: 'POST',
+            body: formData as any,
+            headers: formData.getHeaders()
+          });
+
+          if (response.ok) {
+            const result = await response.json() as any;
+            console.log('[VoiceTranslation] Local Whisper STT successful');
+            return {
+              text: result.text,
+              language: result.language
+            };
+          } else {
+            console.warn(`[VoiceTranslation] Local Whisper STT failed with status: ${response.status}`);
+          }
+        } catch (error) {
+          console.warn('[VoiceTranslation] Local Whisper STT unavailable, falling back to OpenAI:', error);
         }
-      });
+      }
 
-      // Add required properties for OpenAI API
-      (audioStream as any).path = 'audio.wav';
-
+      // Fallback to OpenAI Whisper
+      console.log('[VoiceTranslation] Using OpenAI Whisper as fallback');
       const transcription = await openai.audio.transcriptions.create({
-        file: audioStream as any,
+        file: new File([audioBuffer], 'audio.wav', { type: 'audio/wav' }),
         model: 'whisper-1',
-        response_format: 'text',
-        language: 'auto', // Auto-detect language
+        language: undefined, // Auto-detect
+        response_format: 'verbose_json'
       });
 
-      return transcription || null;
+      return {
+        text: transcription.text,
+        language: (transcription as any).language
+      };
+      
     } catch (error) {
-      console.error('[VoiceTranslation] Whisper transcription error:', error);
+      console.error('[VoiceTranslation] Error transcribing audio:', error);
       return null;
     }
   }
 
   /**
-   * Create WAV buffer with proper headers
+   * Create WAV buffer from PCM data
    */
   private createWavBuffer(pcmBuffer: Buffer): Buffer {
-    const sampleRate = 16000; // 16kHz
-    const channels = 1; // Mono
-    const bitsPerSample = 16;
-
+    const channels = this.CHANNELS;
+    const sampleRate = this.SAMPLE_RATE;
+    const bitsPerSample = this.BITS_PER_SAMPLE;
     const byteRate = sampleRate * channels * bitsPerSample / 8;
     const blockAlign = channels * bitsPerSample / 8;
     const dataSize = pcmBuffer.length;
@@ -203,113 +280,59 @@ export class VoiceTranslationService {
     return Buffer.concat([header, pcmBuffer]);
   }
 
-
-
   /**
-   * Generate speech from text using Coqui TTS
+   * Generate speech using local Coqui TTS or OpenAI fallback
    */
   async generateSpeech(text: string, language: string = 'en-US'): Promise<Buffer | null> {
     try {
       console.log(`[VoiceTranslation] Generating speech for: "${text}" in ${language}`);
 
-      // Get the Coqui TTS server URL from environment variables or use default
-      const coquiServerUrl = process.env.COQUI_TTS_SERVER_URL || 'http://localhost:5002';
+      // Try local Coqui TTS first
+      if (COQUI_TTS_ENABLED) {
+        try {
+          // Map language codes to Coqui TTS compatible language IDs
+          const languageMap: Record<string, string> = {
+            'en-US': 'en', 'en-GB': 'en', 'pt-BR': 'pt', 'pt-PT': 'pt',
+            'es-ES': 'es', 'es-MX': 'es', 'fr-FR': 'fr', 'fr-CA': 'fr',
+            'de-DE': 'de', 'it-IT': 'it', 'ja-JP': 'ja', 'ko-KR': 'ko',
+            'zh-CN': 'zh-cn', 'zh-TW': 'zh-cn', 'ru-RU': 'ru', 'ar-SA': 'ar',
+            'hi-IN': 'hi', 'th-TH': 'th', 'vi-VN': 'vi', 'tr-TR': 'tr',
+            'pl-PL': 'pl', 'nl-NL': 'nl', 'sv-SE': 'sv', 'da-DK': 'da',
+            'fi-FI': 'fi', 'no-NO': 'no', 'cs-CZ': 'cs', 'hu-HU': 'hu'
+          };
 
-      // Map language codes to Coqui TTS compatible language/speaker IDs
-      const languageMap: Record<string, { language: string; speaker?: string }> = {
-        'en-US': { language: 'en', speaker: 'p225' },
-        'en-GB': { language: 'en', speaker: 'p226' },
-        'pt-BR': { language: 'pt', speaker: 'p227' },
-        'pt-PT': { language: 'pt', speaker: 'p228' },
-        'es-ES': { language: 'es', speaker: 'p229' },
-        'es-MX': { language: 'es', speaker: 'p230' },
-        'fr-FR': { language: 'fr', speaker: 'p231' },
-        'fr-CA': { language: 'fr', speaker: 'p232' },
-        'de-DE': { language: 'de', speaker: 'p233' },
-        'it-IT': { language: 'it', speaker: 'p234' },
-        'ja-JP': { language: 'ja', speaker: 'p235' },
-        'ko-KR': { language: 'ko', speaker: 'p236' },
-        'zh-CN': { language: 'zh-cn', speaker: 'p237' },
-        'zh-TW': { language: 'zh-tw', speaker: 'p238' },
-        'ru-RU': { language: 'ru', speaker: 'p239' },
-        'ar-SA': { language: 'ar', speaker: 'p240' },
-        'hi-IN': { language: 'hi', speaker: 'p241' },
-        'th-TH': { language: 'th', speaker: 'p242' },
-        'vi-VN': { language: 'vi', speaker: 'p243' },
-        'tr-TR': { language: 'tr', speaker: 'p244' },
-        'pl-PL': { language: 'pl', speaker: 'p245' },
-        'nl-NL': { language: 'nl', speaker: 'p246' },
-        'sv-SE': { language: 'sv', speaker: 'p247' },
-        'da-DK': { language: 'da', speaker: 'p248' },
-        'fi-FI': { language: 'fi', speaker: 'p249' },
-        'no-NO': { language: 'no', speaker: 'p250' },
-        'cs-CZ': { language: 'cs', speaker: 'p251' },
-        'hu-HU': { language: 'hu', speaker: 'p252' },
-        'ro-RO': { language: 'ro', speaker: 'p253' },
-        'uk-UA': { language: 'uk', speaker: 'p254' },
-        'he-IL': { language: 'he', speaker: 'p255' },
-        'fa-IR': { language: 'fa', speaker: 'p256' },
-        'ur-PK': { language: 'ur', speaker: 'p257' },
-        'bn-BD': { language: 'bn', speaker: 'p258' },
-        'ta-IN': { language: 'ta', speaker: 'p259' },
-        'te-IN': { language: 'te', speaker: 'p260' },
-        'ml-IN': { language: 'ml', speaker: 'p261' },
-        'kn-IN': { language: 'kn', speaker: 'p262' },
-        'gu-IN': { language: 'gu', speaker: 'p263' },
-        'pa-IN': { language: 'pa', speaker: 'p264' },
-        'ne-NP': { language: 'ne', speaker: 'p265' },
-        'si-LK': { language: 'si', speaker: 'p266' },
-        'my-MM': { language: 'my', speaker: 'p267' },
-        'km-KH': { language: 'km', speaker: 'p268' },
-        'lo-LA': { language: 'lo', speaker: 'p269' },
-        'ka-GE': { language: 'ka', speaker: 'p270' },
-        'am-ET': { language: 'am', speaker: 'p271' },
-        'sw-KE': { language: 'sw', speaker: 'p272' },
-        'zu-ZA': { language: 'zu', speaker: 'p273' },
-        'af-ZA': { language: 'af', speaker: 'p274' },
-        'ms-MY': { language: 'ms', speaker: 'p275' },
-        'tl-PH': { language: 'tl', speaker: 'p276' },
-        'id-ID': { language: 'id', speaker: 'p277' },
-        'jv-ID': { language: 'jv', speaker: 'p278' },
-      };
+          const mappedLanguage = languageMap[language] || 'en';
 
-      const mappedLanguage = languageMap[language] || { language: 'en', speaker: 'p225' };
+          const payload = {
+            text: text,
+            language_id: mappedLanguage,
+            speed: 1.0
+          };
 
-      // Try Coqui TTS first, fallback to OpenAI TTS if unavailable
-      try {
-        // Prepare the request payload for Coqui TTS
-        const payload = {
-          text: text,
-          language_id: mappedLanguage.language,
-          speaker_id: mappedLanguage.speaker,
-          style_wav: '',
-          speed: 1.0
-        };
+          const response = await fetch(`${COQUI_TTS_SERVER_URL}/api/tts`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'audio/wav',
+            },
+            body: JSON.stringify(payload),
+          });
 
-        // Make the request to Coqui TTS server
-        const response = await fetch(`${coquiServerUrl}/api/tts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'audio/wav',
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (response.ok) {
-          const audioArrayBuffer = await response.arrayBuffer();
-          const audioBuffer = Buffer.from(audioArrayBuffer);
-
-          console.log(`[VoiceTranslation] Generated ${audioBuffer.length} bytes of audio via Coqui TTS`);
-          return audioBuffer;
-        } else {
-          console.warn(`[VoiceTranslation] Coqui TTS server responded with status: ${response.status}, falling back to OpenAI TTS`);
+          if (response.ok) {
+            const audioArrayBuffer = await response.arrayBuffer();
+            const audioBuffer = Buffer.from(audioArrayBuffer);
+            console.log(`[VoiceTranslation] Generated ${audioBuffer.length} bytes of audio via local Coqui TTS`);
+            return audioBuffer;
+          } else {
+            console.warn(`[VoiceTranslation] Local Coqui TTS failed with status: ${response.status}`);
+          }
+        } catch (error) {
+          console.warn('[VoiceTranslation] Local Coqui TTS unavailable, falling back to OpenAI TTS:', error);
         }
-      } catch (coquiError) {
-        console.warn('[VoiceTranslation] Coqui TTS unavailable, falling back to OpenAI TTS:', coquiError);
       }
 
       // Fallback to OpenAI TTS
+      console.log('[VoiceTranslation] Using OpenAI TTS as fallback');
       const voiceMap: { [key: string]: string } = {
         'en-US': 'alloy', 'en-GB': 'echo', 'es-ES': 'fable', 'fr-FR': 'onyx', 
         'de-DE': 'nova', 'it-IT': 'shimmer', 'pt-BR': 'alloy', 'pt-PT': 'alloy',
@@ -317,18 +340,11 @@ export class VoiceTranslationService {
         'ar-SA': 'shimmer', 'hi-IN': 'alloy', 'th-TH': 'echo', 'vi-VN': 'fable',
         'tr-TR': 'onyx', 'pl-PL': 'nova', 'nl-NL': 'shimmer', 'sv-SE': 'alloy',
         'da-DK': 'echo', 'fi-FI': 'fable', 'no-NO': 'onyx', 'cs-CZ': 'nova',
-        'hu-HU': 'shimmer', 'ro-RO': 'alloy', 'uk-UA': 'echo', 'he-IL': 'fable',
-        'fa-IR': 'onyx', 'ur-PK': 'nova', 'bn-BD': 'shimmer', 'ta-IN': 'alloy',
-        'te-IN': 'echo', 'ml-IN': 'fable', 'kn-IN': 'onyx', 'gu-IN': 'nova',
-        'pa-IN': 'shimmer', 'ne-NP': 'alloy', 'si-LK': 'echo', 'my-MM': 'fable',
-        'km-KH': 'onyx', 'lo-LA': 'nova', 'ka-GE': 'shimmer', 'am-ET': 'alloy',
-        'sw-KE': 'echo', 'zu-ZA': 'fable', 'af-ZA': 'onyx', 'ms-MY': 'nova',
-        'tl-PH': 'shimmer', 'id-ID': 'alloy', 'jv-ID': 'echo'
+        'hu-HU': 'shimmer', 'ro-RO': 'alloy', 'uk-UA': 'echo', 'he-IL': 'fable'
       };
 
       const voice = voiceMap[language] || 'alloy';
 
-      // Generate audio using OpenAI TTS as fallback
       const mp3Response = await openai.audio.speech.create({
         model: 'tts-1',
         voice: voice as any,
@@ -348,6 +364,41 @@ export class VoiceTranslationService {
   }
 
   /**
+   * Process real-time audio stream for live translation
+   */
+  async processRealTimeAudio(
+    userId: number,
+    conversationId: number,
+    audioStream: Buffer,
+    targetLanguage: string,
+    onTranslation: (result: VoiceTranslationResult) => void
+  ): Promise<void> {
+    try {
+      // Split audio stream into chunks for processing
+      const chunkSize = 8192; // 8KB chunks
+      let sequenceNumber = 0;
+      
+      for (let i = 0; i < audioStream.length; i += chunkSize) {
+        const chunk = audioStream.slice(i, i + chunkSize);
+        
+        const result = await this.processAudioChunk(
+          userId,
+          conversationId,
+          chunk,
+          targetLanguage,
+          sequenceNumber++
+        );
+        
+        if (result) {
+          onTranslation(result);
+        }
+      }
+    } catch (error) {
+      console.error('[VoiceTranslation] Error processing real-time audio:', error);
+    }
+  }
+
+  /**
    * Cleanup resources for a conversation
    */
   cleanupConversation(userId: number, conversationId: number): void {
@@ -362,7 +413,84 @@ export class VoiceTranslationService {
     // Clear audio chunks
     this.audioChunks.delete(chunkKey);
 
+    // Clear processing queue
+    this.processingQueue.delete(chunkKey);
+
     console.log('[VoiceTranslation] Cleaned up resources for:', chunkKey);
+  }
+
+  /**
+   * Get processing statistics for monitoring
+   */
+  getProcessingStats(): { 
+    activeChunks: number; 
+    processingQueues: number; 
+    activeTimers: number;
+    serviceStatus: {
+      whisperSTT: boolean;
+      coquiTTS: boolean;
+    }
+  } {
+    return {
+      activeChunks: this.audioChunks.size,
+      processingQueues: Array.from(this.processingQueue.values()).filter(Boolean).length,
+      activeTimers: this.chunkTimers.size,
+      serviceStatus: {
+        whisperSTT: WHISPER_STT_ENABLED,
+        coquiTTS: COQUI_TTS_ENABLED
+      }
+    };
+  }
+
+  /**
+   * Health check for voice services
+   */
+  async healthCheck(): Promise<{
+    whisperSTT: { available: boolean; latency?: number };
+    coquiTTS: { available: boolean; latency?: number };
+  }> {
+    const result = {
+      whisperSTT: { available: false, latency: undefined as number | undefined },
+      coquiTTS: { available: false, latency: undefined as number | undefined }
+    };
+
+    // Check Whisper STT
+    if (WHISPER_STT_ENABLED) {
+      try {
+        const start = Date.now();
+        const response = await fetch(`${WHISPER_STT_SERVER_URL}/health`, {
+          method: 'GET',
+          timeout: 5000
+        } as any);
+        
+        if (response.ok) {
+          result.whisperSTT.available = true;
+          result.whisperSTT.latency = Date.now() - start;
+        }
+      } catch (error) {
+        console.warn('[VoiceTranslation] Whisper STT health check failed:', error);
+      }
+    }
+
+    // Check Coqui TTS
+    if (COQUI_TTS_ENABLED) {
+      try {
+        const start = Date.now();
+        const response = await fetch(`${COQUI_TTS_SERVER_URL}/health`, {
+          method: 'GET',
+          timeout: 5000
+        } as any);
+        
+        if (response.ok) {
+          result.coquiTTS.available = true;
+          result.coquiTTS.latency = Date.now() - start;
+        }
+      } catch (error) {
+        console.warn('[VoiceTranslation] Coqui TTS health check failed:', error);
+      }
+    }
+
+    return result;
   }
 }
 

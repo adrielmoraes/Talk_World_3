@@ -121,6 +121,36 @@ export function useWebSocket() {
             window.dispatchEvent(activityEvent);
             break;
 
+          case "voice_translation_result":
+            // Handle voice translation results
+            const translationEvent = new CustomEvent('voice_translation_result', {
+              detail: {
+                originalText: message.originalText,
+                translatedText: message.translatedText,
+                sourceLanguage: message.sourceLanguage,
+                targetLanguage: message.targetLanguage,
+                audioBuffer: message.audioBuffer,
+                fromUserId: message.fromUserId,
+                conversationId: message.conversationId,
+                timestamp: message.timestamp
+              }
+            });
+            window.dispatchEvent(translationEvent);
+            break;
+
+          case "voice_translation_processed":
+            // Handle voice translation processing confirmation
+            const processedEvent = new CustomEvent('voice_translation_processed', {
+              detail: {
+                conversationId: message.conversationId,
+                sequenceNumber: message.sequenceNumber,
+                success: message.success,
+                error: message.error
+              }
+            });
+            window.dispatchEvent(processedEvent);
+            break;
+
           default:
             console.log("Unknown message type:", message.type);
         }
@@ -205,6 +235,25 @@ export function useWebSocket() {
     }
   }, []);
 
+  const sendVoiceAudioChunk = useCallback((
+    audioData: string, // base64 encoded audio
+    conversationId: number,
+    targetUserId: number,
+    targetLanguage: string = 'en-US',
+    sequenceNumber: number = 0
+  ) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'voice_audio_chunk',
+        audioData,
+        conversationId,
+        targetUserId,
+        targetLanguage,
+        sequenceNumber
+      }));
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       disconnect();
@@ -218,6 +267,7 @@ export function useWebSocket() {
     sendUserActivity,
     requestUserStatus,
     sendWebRTCSignal,
+    sendVoiceAudioChunk,
     isConnected: isConnectedRef.current,
   };
 }

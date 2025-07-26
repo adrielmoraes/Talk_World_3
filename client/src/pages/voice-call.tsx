@@ -24,6 +24,7 @@ export default function VoiceCallScreen() {
   const [callStatus, setCallStatus] = useState("Conectando...");
   const [callDuration, setCallDuration] = useState(0);
   const [showTranslations, setShowTranslations] = useState(false);
+  const [webrtcError, setWebrtcError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { 
@@ -45,14 +46,16 @@ export default function VoiceCallScreen() {
   const {
     isRecording: isTranslationRecording,
     isProcessing: isTranslationProcessing,
-    translations,
+    lastTranslation,
+    error: translationError,
     startRecording: startVoiceTranslation,
     stopRecording: stopVoiceTranslation,
-    clearTranslations,
+    clearError,
   } = useVoiceTranslation({
     conversationId: parseInt(contactId!) || 0,
-    targetLanguage: 'en-US', // Could be based on contact's preferred language
-    enabled: callTranslationEnabled,
+    targetUserId: parseInt(contactId!) || 0,
+    targetLanguage: 'pt-BR', // Portuguese as target language
+    isEnabled: callTranslationEnabled,
   });
 
   const createCallMutation = useMutation({
@@ -94,6 +97,7 @@ export default function VoiceCallScreen() {
     let interval: NodeJS.Timeout;
     if (isConnected) {
       setCallStatus("Conectado");
+      setWebrtcError(null); // Clear any previous errors
       interval = setInterval(() => {
         setCallDuration(prev => prev + 1);
       }, 1000);
@@ -108,6 +112,28 @@ export default function VoiceCallScreen() {
       if (interval) clearInterval(interval);
     };
   }, [isConnected, callTranslationEnabled, startVoiceTranslation]);
+
+  // Handle WebRTC errors
+  useEffect(() => {
+    const handleWebRTCError = (event: CustomEvent) => {
+      const { message, type } = event.detail;
+      setWebrtcError(message);
+      setCallStatus("Erro na conexão");
+      
+      toast({
+        title: "Erro na Chamada",
+        description: message,
+        variant: "destructive",
+        duration: 8000,
+      });
+    };
+
+    window.addEventListener('webrtc_error', handleWebRTCError as EventListener);
+    
+    return () => {
+      window.removeEventListener('webrtc_error', handleWebRTCError as EventListener);
+    };
+  }, [toast]);
 
   // Handle translation toggle
   const handleToggleTranslation = () => {
@@ -143,7 +169,7 @@ export default function VoiceCallScreen() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const contact = contactData?.user || { username: "Usuário", profilePhoto: null };
+  const contact = (contactData as any)?.user || { username: "Usuário", profilePhoto: null };
 
   return (
     <div className="h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white flex flex-col">
@@ -165,20 +191,67 @@ export default function VoiceCallScreen() {
         </div>
         <h2 className="text-2xl font-medium mb-2">{contact.username}</h2>
         <p className="text-lg opacity-75">{callStatus}</p>
+        {isConnected && (
+          <div className="flex items-center justify-center mt-2">
+            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="ml-2 text-sm text-green-400">Conectado</span>
+          </div>
+        )}
       </div>
+
+      {/* WebRTC Error Display */}
+      {webrtcError && (
+        <div className="mx-6 mb-4">
+          <div className="bg-red-500 bg-opacity-20 border border-red-500 border-opacity-30 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-white text-sm font-bold">!</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-red-400 font-medium mb-1">Erro de Permissão</h3>
+                <p className="text-sm text-red-300 mb-3">{webrtcError}</p>
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={() => window.location.reload()}
+                    size="sm"
+                    className="bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    Tentar Novamente
+                  </Button>
+                  <Button
+                    onClick={handleEndCall}
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500 text-red-400 hover:bg-red-500 hover:text-white"
+                  >
+                    Encerrar Chamada
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Translation Status */}
       {callTranslationEnabled && (
         <div className="mx-6 mb-4">
           <div className="bg-whatsapp-primary bg-opacity-20 border border-whatsapp-primary border-opacity-30 rounded-lg p-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Languages className="h-5 w-5 text-whatsapp-primary mr-2" />
-                <span className="text-sm">
-                  {isTranslationRecording ? "Gravando e traduzindo..." : 
-                   isTranslationProcessing ? "Processando..." :
-                   "Tradução em tempo real ativa"}
-                </span>
+              <div className="flex items-center space-x-3">
+                <Languages className="h-5 w-5 text-whatsapp-primary" />
+                <div className="flex flex-col">
+                  <span className="text-sm">
+                    {isTranslationRecording ? "Gravando e traduzindo..." : 
+                     isTranslationProcessing ? "Processando..." :
+                     "Tradução em tempo real ativa"}
+                  </span>
+                  <div className="flex items-center space-x-2 text-xs text-gray-300">
+                    <span className="px-2 py-1 rounded-full text-xs bg-green-500 bg-opacity-20 text-green-400">
+                      Status: Ativo
+                    </span>
+                  </div>
+                </div>
               </div>
               <Button
                 onClick={() => setShowTranslations(!showTranslations)}
@@ -195,27 +268,65 @@ export default function VoiceCallScreen() {
 
       {/* Translation Panel */}
       {showTranslations && callTranslationEnabled && (
-        <div className="mx-6 mb-4 max-h-40 overflow-y-auto">
-          <div className="bg-gray-800 bg-opacity-50 rounded-lg p-3 space-y-2">
-            {translations.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center">
-                Aguardando tradução...
-              </p>
-            ) : (
-              translations.slice(-5).map((translation, index) => (
-                <div key={`${translation.timestamp}-${index}`} className="text-sm">
-                  <div className="text-gray-300">
-                    <strong>Original:</strong> {translation.originalText}
+        <div className="mx-6 mb-4">
+          <div className="bg-black bg-opacity-30 backdrop-blur-sm rounded-lg p-4 max-h-48 overflow-y-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-white">Traduções em Tempo Real</h3>
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    isTranslationRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-500'
+                  }`}></div>
+                  <span className="text-xs text-gray-300">
+                    {isTranslationRecording ? 'Gravando' : 'Pausado'}
+                  </span>
+                </div>
+                {isTranslationProcessing && (
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                    <span className="text-xs text-blue-400">Processando...</span>
                   </div>
-                  <div className="text-whatsapp-primary">
-                    <strong>Tradução:</strong> {translation.translatedText}
+                )}
+              </div>
+            </div>
+            
+            {/* Translation Error */}
+            {translationError && (
+              <div className="mb-3 p-2 bg-red-500 bg-opacity-20 border border-red-500 border-opacity-30 rounded">
+                <p className="text-xs text-red-300">{translationError}</p>
+                <Button
+                  onClick={clearError}
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-red-400 hover:text-red-300 mt-1 p-0 h-auto"
+                >
+                  Limpar erro
+                </Button>
+              </div>
+            )}
+            
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {!lastTranslation ? (
+                <p className="text-sm text-gray-400 text-center py-4">
+                  Nenhuma tradução ainda. Comece a falar para ver as traduções.
+                </p>
+              ) : (
+                <div className="bg-white bg-opacity-10 rounded p-2">
+                  <div className="text-xs text-gray-300 mb-1">
+                    {lastTranslation.sourceLanguage} → {lastTranslation.targetLanguage}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {translation.sourceLanguage} → {translation.targetLanguage}
+                  <div className="text-sm text-white mb-1">
+                    <strong>Original:</strong> {lastTranslation.originalText}
+                  </div>
+                  <div className="text-sm text-blue-300">
+                    <strong>Traduzido:</strong> {lastTranslation.translatedText}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {new Date(lastTranslation.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
-              ))
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}

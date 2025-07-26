@@ -213,8 +213,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }));
             }
           }
+        } else if (message.type === 'voice_audio_chunk') {
+          // Handle real-time voice audio chunks for translation
+          if (ws.userId && message.conversationId && message.targetUserId && message.audioData) {
+            try {
+              const audioBuffer = Buffer.from(message.audioData, 'base64');
+              const targetLanguage = message.targetLanguage || 'en-US';
+              const sequenceNumber = message.sequenceNumber || 0;
+              
+              // Process audio chunk through voice translation service
+              const result = await voiceTranslationService.processAudioChunk(
+                ws.userId,
+                message.conversationId,
+                audioBuffer,
+                targetLanguage,
+                sequenceNumber
+              );
+              
+              // If translation result is available, broadcast to target user
+              if (result) {
+                const targetWs = connectedClients.get(message.targetUserId);
+                if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                  targetWs.send(JSON.stringify({
+                    type: 'voice_translation_result',
+                    originalText: result.originalText,
+                    translatedText: result.translatedText,
+                    sourceLanguage: result.sourceLanguage,
+                    targetLanguage: result.targetLanguage,
+                    audioBuffer: result.audioBuffer ? result.audioBuffer.toString('base64') : null,
+                    fromUserId: ws.userId,
+                    conversationId: message.conversationId,
+                    timestamp: result.timestamp,
+                  }));
+                }
+                
+                // Also send confirmation back to sender
+                ws.send(JSON.stringify({
+                  type: 'voice_translation_processed',
+                  conversationId: message.conversationId,
+                  sequenceNumber,
+                  success: true
+                }));
+              }
+            } catch (error) {
+              console.error('[WebSocket] Voice audio chunk processing error:', error);
+              ws.send(JSON.stringify({
+                type: 'voice_translation_processed',
+                conversationId: message.conversationId,
+                sequenceNumber: message.sequenceNumber || 0,
+                success: false,
+                error: 'Processing failed'
+              }));
+            }
+          }
         } else if (message.type === 'voice_translation') {
-          // Handle voice translation result broadcasting
+          // Handle voice translation result broadcasting (legacy support)
           if (ws.userId && message.conversationId && message.targetUserId) {
             const targetWs = connectedClients.get(message.targetUserId);
             if (targetWs && targetWs.readyState === WebSocket.OPEN) {
@@ -801,9 +854,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Process audio chunk with voice translation service
       const result = await voiceTranslationService.processAudioChunk(
-        req.file.buffer,
         req.userId,
         parseInt(conversationId),
+        req.file.buffer,
         targetLanguage
       );
 
