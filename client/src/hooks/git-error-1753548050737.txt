@@ -1,0 +1,29 @@
+> git push origin main:main
+remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   —————————————————————————————————————————        
+remote:     Resolve the following violations before pushing again        
+remote: 
+remote:     - Push cannot contain secrets        
+remote: 
+remote:             
+remote:      (?) Learn how to resolve a blocked push        
+remote:      https://docs.github.com/code-security/secret-scanning/working-with-secret-scanning-and-push-protection/working-with-push-protection-from-the-command-line#resolving-a-blocked-push        
+remote:             
+remote:             
+remote:       —— Groq API Key ——————————————————————————————————————        
+remote:        locations:        
+remote:          - commit: 74e231765c4e15c91e4dcddfa96f650c328b8c10        
+remote:            path: .env:10        
+remote:          - commit: 45cf192ce0cae9ccc4d11c07e588961264e87d70        
+remote:            path: .env:10        
+remote:             
+remote:        (?) To push, remove secret from commit(s) or follow this URL to allow the secret.        
+remote:        https://github.com/adrielmoraes/Talk_World_3/security/secret-scanning/unblock-secret/30NmFR8cWSmY7ujOHLeqBwedMEf        
+remote:             
+remote: 
+remote: 
+To https://github.com/adrielmoraes/Talk_World_3.git
+ ! [remote rejected] main -> main (push declined due to repository rule violations)
+error: failed to push some refs to 'https://github.com/adrielmoraes/Talk_World_3.git'
