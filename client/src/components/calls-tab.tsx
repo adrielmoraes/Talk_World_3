@@ -5,11 +5,14 @@ import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import ContactSelector from "@/components/contact-selector";
+import CallDetailsModal from "@/components/call-details-modal";
 import type { CallsResponse } from "@/types/api";
 
 export default function CallsTab() {
   const [, setLocation] = useLocation();
   const [showContactSelector, setShowContactSelector] = useState(false);
+  const [selectedCall, setSelectedCall] = useState<any>(null);
+  const [showCallDetails, setShowCallDetails] = useState(false);
   const { toast } = useToast();
 
   const { data: callsData } = useQuery<CallsResponse>({
@@ -53,11 +56,9 @@ export default function CallsTab() {
     createCallMutation.mutate(contactId);
   };
 
-  const showCallInfo = () => {
-    toast({
-      title: "Recurso não implementado",
-      description: "Detalhes da chamada serão implementados em versão futura.",
-    });
+  const showCallInfo = (call: any) => {
+    setSelectedCall(call);
+    setShowCallDetails(true);
   };
 
   const newCall = () => {
@@ -109,7 +110,8 @@ export default function CallsTab() {
             return (
               <div
                 key={call.id}
-                className="border-b border-gray-100 dark:border-whatsapp-elevated hover:bg-gray-50 dark:hover:bg-whatsapp-elevated"
+                className="border-b border-gray-100 dark:border-whatsapp-elevated hover:bg-gray-50 dark:hover:bg-whatsapp-elevated cursor-pointer"
+                onClick={() => showCallInfo(call)}
               >
                 <div className="p-4 flex items-center">
                   {otherUser?.profilePhoto ? (
@@ -142,13 +144,19 @@ export default function CallsTab() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <button 
-                      onClick={showCallInfo}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        showCallInfo(call);
+                      }}
                       className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                     >
                       <Info className="h-5 w-5" />
                     </button>
                     <button 
-                      onClick={() => callBack(otherUser?.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        callBack(otherUser?.id);
+                      }}
                       className="p-2 text-whatsapp-primary hover:bg-whatsapp-primary hover:bg-opacity-10 rounded-full"
                     >
                       <Phone className="h-5 w-5" />
@@ -177,6 +185,13 @@ export default function CallsTab() {
         onOpenChange={setShowContactSelector}
         title="Nova Chamada"
         actionType="call"
+      />
+
+      {/* Call Details Modal */}
+      <CallDetailsModal
+        call={selectedCall}
+        open={showCallDetails}
+        onOpenChange={setShowCallDetails}
       />
 
       {/* New Call FAB */}

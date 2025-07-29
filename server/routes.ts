@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { voiceTranslationService } from "./voice-translation";
 import { groqTranslationService } from "./groq-translation";
+import AudioMessageService from "./audio-message-service";
 import multer from "multer";
 import type { FileFilterCallback } from "multer";
 import fs from "fs";
@@ -25,6 +26,9 @@ const TRANSLATION_RATE_LIMIT = parseInt(process.env.TRANSLATION_RATE_LIMIT || '1
 const VOICE_RATE_LIMIT = parseInt(process.env.VOICE_RATE_LIMIT || '50');
 const OTP_RATE_LIMIT = parseInt(process.env.OTP_RATE_LIMIT || '5');
 const WEBSOCKET_PATH = process.env.WEBSOCKET_PATH || '/ws';
+
+// Initialize Audio Message Service
+const audioMessageService = new AudioMessageService();
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: number;
@@ -87,118 +91,228 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } else if (message.type === 'send_message') {
           // Handle sending messages
           if (ws.userId) {
-            console.log('[WebSocket] Sending message from userId:', ws.userId, 'to conversation:', message.conversationId);
+            let newMessage = null;
             
-            // Get conversation and recipient info for proper translation
-            const conversation = await storage.getConversationById(message.conversationId, ws.userId);
-            if (!conversation) {
-              console.log('[WebSocket] Conversation not found for id:', message.conversationId);
-              return;
-            }
+            try {
+              console.log('[WebSocket] Sending message from userId:', ws.userId, 'to conversation:', message.conversationId);
+              
+              // Get conversation and recipient info for proper translation
+              const conversation = await storage.getConversationById(message.conversationId, ws.userId);
+              if (!conversation) {
+                console.log('[WebSocket] Conversation not found for id:', message.conversationId);
+                ws.send(JSON.stringify({
+                  type: 'message_error',
+                  error: 'Conversation not found'
+                }));
+                return;
+              }
 
-            const recipientId = conversation.otherUser?.id;
-            const recipient = await storage.getUser(recipientId);
-            
-            let finalTranslatedText = message.translatedText;
-            let finalTargetLanguage = message.targetLanguage;
+              const recipientId = conversation.otherUser?.id;
+              const recipient = await storage.getUser(recipientId);
+              
+              let finalTranslatedText = message.translatedText;
+              let finalTargetLanguage = message.targetLanguage;
+              let translationFailed = false;
 
-            // Always translate if recipient has preferred language and it's different from original
-            if (recipient?.preferredLanguage) {
-              try {
-                // First detect the language of the original message
-                const detectionResult = await groqTranslationService.detectLanguage(message.text);
-                const detectedLanguage = detectionResult?.language;
-                
-                // Only translate if the detected language is different from recipient's preferred language
-                if (detectedLanguage && detectedLanguage !== recipient.preferredLanguage) {
-                  // Get previous messages for context (up to 3)
-                  const previousMessages = [];
-                  try {
-                    const messages = await storage.getConversationMessages(message.conversationId);
-                    if (messages && messages.length > 0) {
-                      for (const msg of messages) {
-                        previousMessages.push({
-                          text: msg.originalText || msg.text,
-                          sender: msg.senderId === ws.userId ? 'sender' : 'recipient'
-                        });
-                      }
-                    }
-                  } catch (err) {
-                    console.error('[WebSocket] Error getting previous messages for context:', err);
-                  }
+              // Always translate if recipient has preferred language and it's different from original
+              if (recipient?.preferredLanguage) {
+                try {
+                  // First detect the language of the original message
+                  const detectionResult = await groqTranslationService.detectLanguage(message.text);
+                  const detectedLanguage = detectionResult?.language;
                   
-                  // Translate to recipient's preferred language with conversation context
-                  const translation = await groqTranslationService.translateWithContext({
-                    text: message.text,
-                    sourceLanguage: detectedLanguage,
-                    targetLanguage: recipient.preferredLanguage,
-                    context: {
-                      conversationId: message.conversationId,
-                      senderId: ws.userId.toString(),
-                      recipientId: recipientId.toString(),
-                      messageType: 'chat',
-                      previousMessages: previousMessages
+                  // Only translate if the detected language is different from recipient's preferred language
+                  if (detectedLanguage && detectedLanguage !== recipient.preferredLanguage) {
+                    // Get previous messages for context (up to 3)
+                    const previousMessages = [];
+                    try {
+                      const messages = await storage.getConversationMessages(message.conversationId);
+                      if (messages && messages.length > 0) {
+                        for (const msg of messages) {
+                          previousMessages.push({
+                            text: msg.originalText,
+                            sender: msg.senderId === ws.userId ? 'sender' : 'recipient'
+                          });
+                        }
+                      }
+                    } catch (err) {
+                      console.error('[WebSocket] Error getting previous messages for context:', err);
                     }
+                    
+                    // Translate to recipient's preferred language with conversation context
+                    const translation = await groqTranslationService.translateWithContext({
+                      text: message.text,
+                      sourceLanguage: detectedLanguage,
+                      targetLanguage: recipient.preferredLanguage,
+                      context: {
+                        conversationId: message.conversationId,
+                        senderId: ws.userId.toString(),
+                        recipientId: recipientId.toString(),
+                        messageType: 'chat',
+                        previousMessages: previousMessages
+                      }
+                    });
+                    
+                    if (translation && translation.translatedText) {
+                      finalTranslatedText = translation.translatedText;
+                      finalTargetLanguage = recipient.preferredLanguage;
+                      console.log('[WebSocket] Message translated from', detectedLanguage, 'to', recipient.preferredLanguage);
+                    } else {
+                      translationFailed = true;
+                      finalTranslatedText = message.text; // Fallback to original text
+                      finalTargetLanguage = detectedLanguage || 'unknown';
+                    }
+                  } else {
+                    console.log('[WebSocket] Translation skipped - same language detected:', detectedLanguage);
+                  }
+                } catch (error) {
+                  console.error('[WebSocket] Translation error:', error);
+                  translationFailed = true;
+                  finalTranslatedText = message.text; // Fallback to original text
+                  finalTargetLanguage = 'unknown';
+                }
+              }
+              
+              // Create message in database with retry logic
+              const maxRetries = 3;
+              let lastError: any = null;
+              
+              for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                  newMessage = await storage.createMessage({
+                    conversationId: message.conversationId,
+                    senderId: ws.userId,
+                    originalText: message.text,
+                    translatedText: finalTranslatedText,
+                    targetLanguage: finalTargetLanguage,
+                    messageType: message.fileUrl ? (message.fileType?.startsWith('image/') ? 'image' : 
+                                message.fileType?.startsWith('video/') ? 'video' : 
+                                message.fileType?.startsWith('audio/') ? 'audio' : 'document') : 'text',
+                    fileUrl: message.fileUrl,
+                    fileName: message.fileName,
+                    fileSize: message.fileSize,
+                    fileType: message.fileType,
+                    thumbnailUrl: message.thumbnailUrl,
+                    duration: message.duration,
+                    replyToMessageId: message.replyToMessageId,
+                    isForwarded: message.isForwarded || false,
+                    isStarred: message.isStarred || false,
                   });
                   
-                  if (translation && translation.translatedText) {
-                    finalTranslatedText = translation.translatedText;
-                    finalTargetLanguage = recipient.preferredLanguage;
-                    console.log('[WebSocket] Message translated from', detectedLanguage, 'to', recipient.preferredLanguage);
+                  console.log(`[WebSocket] Message created on attempt ${attempt}:`, newMessage.id);
+                  break; // Sucesso, sair do loop
+                  
+                } catch (dbError) {
+                  lastError = dbError;
+                  console.error(`[WebSocket] Database error on attempt ${attempt}/${maxRetries}:`, dbError);
+                  
+                  if (attempt < maxRetries) {
+                    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 3000);
+                    console.log(`[WebSocket] Waiting ${delay}ms before retry...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
                   }
-                } else {
-                  console.log('[WebSocket] Translation skipped - same language detected:', detectedLanguage);
                 }
-              } catch (error) {
-                console.error('[WebSocket] Translation error:', error);
               }
-            }
-            
-            const newMessage = await storage.createMessage({
-              conversationId: message.conversationId,
-              senderId: ws.userId,
-              originalText: message.text,
-              translatedText: finalTranslatedText,
-              targetLanguage: finalTargetLanguage,
-            });
-
-            console.log('[WebSocket] Message created:', newMessage);
-
-            // Send message to both sender and recipient
-            const messageData = {
-              type: 'new_message',
-              message: newMessage,
-            };
-
-            // Send to sender (for their chat history)
-            ws.send(JSON.stringify(messageData));
-            console.log('[WebSocket] Message sent to sender');
-
-            // Send to recipient if online and mark as delivered
-            console.log('[WebSocket] Sending to recipient:', recipientId);
-            const recipientWs = connectedClients.get(recipientId);
-            if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
-              console.log('[WebSocket] Recipient WebSocket found and open');
               
-              // Mark message as delivered
-              await storage.markMessageAsDelivered(newMessage.id);
-              
-              // Update message data with delivery status
-              const updatedMessage = { ...newMessage, isDelivered: true, deliveredAt: new Date() };
-              
-              recipientWs.send(JSON.stringify({
+              if (!newMessage) {
+                throw new Error(`Failed to save message after ${maxRetries} attempts: ${lastError?.message}`);
+              }
+
+              console.log('[WebSocket] Message created:', newMessage);
+
+              // Send message to both sender and recipient
+              const messageData = {
                 type: 'new_message',
-                message: updatedMessage,
-              }));
+                message: newMessage,
+                translationFailed: translationFailed
+              };
+
+              // Send to sender (for their chat history)
+              ws.send(JSON.stringify(messageData));
+              console.log('[WebSocket] Message sent to sender');
+
+              // Send to recipient if online and mark as delivered
+              console.log('[WebSocket] Sending to recipient:', recipientId);
+              const recipientWs = connectedClients.get(recipientId);
+              if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+                console.log('[WebSocket] Recipient WebSocket found and open');
+                
+                try {
+                  // Mark message as delivered
+                  await storage.markMessageAsDelivered(newMessage.id);
+                  
+                  // Update message data with delivery status
+                  const updatedMessage = { ...newMessage, isDelivered: true, deliveredAt: new Date() };
+                  
+                  recipientWs.send(JSON.stringify({
+                    type: 'new_message',
+                    message: updatedMessage,
+                    translationFailed: translationFailed
+                  }));
+                  
+                  // Notify sender about delivery
+                  ws.send(JSON.stringify({
+                    type: 'message_delivered',
+                    messageId: newMessage.id,
+                    deliveredAt: new Date(),
+                  }));
+                  
+                  console.log('[WebSocket] Message delivered to recipient');
+                } catch (deliveryError) {
+                  console.error('[WebSocket] Error marking message as delivered:', deliveryError);
+                  // Não falhar aqui, a mensagem já foi salva
+                }
+              } else {
+                console.log('[WebSocket] Recipient WebSocket not found or closed');
+              }
               
-              // Notify sender about delivery
+            } catch (error) {
+              console.error('[WebSocket] Error processing message:', error);
+              
+              // Tentar salvar mensagem de emergência se ainda não foi salva
+              if (!newMessage && message.text) {
+                try {
+                  const conversation = await storage.getConversationById(message.conversationId, ws.userId);
+                  const recipient = conversation?.otherUser?.id ? await storage.getUser(conversation.otherUser.id) : null;
+                  
+                  newMessage = await storage.createMessage({
+                    conversationId: message.conversationId,
+                    senderId: ws.userId,
+                    originalText: message.text,
+                    translatedText: message.text, // Fallback to original text
+                    targetLanguage: recipient?.preferredLanguage || 'unknown',
+                    messageType: message.fileUrl ? (message.fileType?.startsWith('image/') ? 'image' : 
+                                message.fileType?.startsWith('video/') ? 'video' : 
+                                message.fileType?.startsWith('audio/') ? 'audio' : 'document') : 'text',
+                    fileUrl: message.fileUrl,
+                    fileName: message.fileName,
+                    fileSize: message.fileSize,
+                    fileType: message.fileType,
+                    thumbnailUrl: message.thumbnailUrl,
+                    duration: message.duration,
+                    replyToMessageId: message.replyToMessageId,
+                    isForwarded: message.isForwarded || false,
+                    isStarred: message.isStarred || false,
+                  });
+                  
+                  console.log('[WebSocket] Emergency message saved:', newMessage.id);
+                  
+                  ws.send(JSON.stringify({
+                    type: 'new_message',
+                    message: newMessage,
+                    emergencyFallback: true
+                  }));
+                  
+                } catch (emergencyError) {
+                  console.error('[WebSocket] Failed to save emergency message:', emergencyError);
+                }
+              }
+              
               ws.send(JSON.stringify({
-                type: 'message_delivered',
-                messageId: newMessage.id,
-                deliveredAt: new Date(),
+                type: 'message_error',
+                error: 'Failed to process message',
+                emergencyFallback: !!newMessage
               }));
-            } else {
-              console.log('[WebSocket] Recipient WebSocket not found or closed');
             }
           }
         } else if (message.type === 'webrtc_signal') {
@@ -280,6 +394,223 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 fromUserId: ws.userId,
                 conversationId: message.conversationId,
                 timestamp: message.timestamp,
+              }));
+            }
+          }
+        } else if (message.type === 'send_audio_message') {
+          // Handle push-to-talk audio messages
+          if (ws.userId && message.conversationId && message.audioData) {
+            let newMessage = null;
+            let audioProcessingSuccess = false;
+            
+            try {
+              console.log('[WebSocket] Processing audio message from userId:', ws.userId);
+              
+              // Get conversation and recipient info
+              const conversation = await storage.getConversationById(message.conversationId, ws.userId);
+              if (!conversation) {
+                console.log('[WebSocket] Conversation not found for id:', message.conversationId);
+                ws.send(JSON.stringify({
+                  type: 'audio_processing_error',
+                  error: 'Conversation not found'
+                }));
+                return;
+              }
+
+              const recipientId = conversation.otherUser?.id;
+              const recipient = await storage.getUser(recipientId);
+              
+              // Convert base64 audio data to buffer
+              const audioBuffer = Buffer.from(message.audioData, 'base64');
+              
+              // Get sender and recipient languages
+              const senderLanguage = message.senderLanguage || 'en';
+              const recipientLanguage = recipient?.preferredLanguage || message.recipientLanguage || 'en';
+              
+              console.log('[WebSocket] Processing audio: sender lang =', senderLanguage, ', recipient lang =', recipientLanguage);
+              
+              // Process audio through the audio message service
+              const result = await audioMessageService.processAudioMessage(
+                audioBuffer,
+                senderLanguage,
+                recipientLanguage
+              );
+              
+              if (result.success && result.audioBuffer) {
+                audioProcessingSuccess = true;
+                // Convert processed audio back to base64
+                const processedAudioBase64 = result.audioBuffer.toString('base64');
+                
+                // Create message in database with retry logic
+                const maxRetries = 3;
+                let lastError: any = null;
+                
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                  try {
+                    newMessage = await storage.createMessage({
+                      conversationId: message.conversationId,
+                      senderId: ws.userId,
+                      originalText: result.transcription || '',
+                      translatedText: result.translation || '',
+                      targetLanguage: recipientLanguage,
+                      messageType: 'audio',
+                      fileUrl: `data:audio/wav;base64,${processedAudioBase64}`,
+                      fileName: 'voice_message.wav',
+                      fileType: 'audio/wav',
+                      duration: Math.floor((result.processingTime || 0) / 1000),
+                      replyToMessageId: message.replyToMessageId,
+                      isForwarded: message.isForwarded || false,
+                      isStarred: message.isStarred || false,
+                    });
+                    
+                    console.log(`[WebSocket] Audio message created on attempt ${attempt}:`, newMessage.id);
+                    break; // Sucesso, sair do loop
+                    
+                  } catch (dbError) {
+                    lastError = dbError;
+                    console.error(`[WebSocket] Database error on attempt ${attempt}/${maxRetries}:`, dbError);
+                    
+                    if (attempt < maxRetries) {
+                      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 3000);
+                      console.log(`[WebSocket] Waiting ${delay}ms before retry...`);
+                      await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                  }
+                }
+                
+                if (!newMessage) {
+                  throw new Error(`Failed to save message after ${maxRetries} attempts: ${lastError?.message}`);
+                }
+                
+                // Send message to both sender and recipient
+                const messageData = {
+                  type: 'new_message',
+                  message: newMessage,
+                };
+                
+                // Send to sender
+                ws.send(JSON.stringify(messageData));
+                console.log('[WebSocket] Audio message sent to sender');
+                
+                // Send to recipient if online
+                const recipientWs = connectedClients.get(recipientId);
+                if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+                  try {
+                    // Mark message as delivered
+                    await storage.markMessageAsDelivered(newMessage.id);
+                    
+                    const updatedMessage = { ...newMessage, isDelivered: true, deliveredAt: new Date() };
+                    
+                    recipientWs.send(JSON.stringify({
+                      type: 'new_message',
+                      message: updatedMessage,
+                    }));
+                    
+                    // Notify sender about delivery
+                    ws.send(JSON.stringify({
+                      type: 'message_delivered',
+                      messageId: newMessage.id,
+                      deliveredAt: new Date(),
+                    }));
+                    
+                    console.log('[WebSocket] Audio message delivered to recipient');
+                  } catch (deliveryError) {
+                    console.error('[WebSocket] Error marking message as delivered:', deliveryError);
+                    // Não falhar aqui, a mensagem já foi salva
+                  }
+                } else {
+                  console.log('[WebSocket] Recipient not online, message saved for later');
+                }
+                
+              } else {
+                console.error('[WebSocket] Audio processing failed:', result.error);
+                
+                // Salvar mensagem de fallback com áudio original se o processamento falhou
+                try {
+                  newMessage = await storage.createMessage({
+                    conversationId: message.conversationId,
+                    senderId: ws.userId,
+                    originalText: '[Áudio não processado]',
+                    translatedText: '[Audio not processed]',
+                    targetLanguage: recipient?.preferredLanguage || 'en',
+                    messageType: 'audio',
+                    fileUrl: `data:audio/wav;base64,${message.audioData}`,
+                    fileName: 'voice_message_original.wav',
+                    fileType: 'audio/wav',
+                    replyToMessageId: message.replyToMessageId,
+                    isForwarded: message.isForwarded || false,
+                    isStarred: message.isStarred || false,
+                  });
+                  
+                  console.log('[WebSocket] Fallback audio message saved:', newMessage.id);
+                  
+                  // Enviar mensagem de fallback
+                  const fallbackData = {
+                    type: 'new_message',
+                    message: newMessage,
+                    processingFailed: true
+                  };
+                  
+                  ws.send(JSON.stringify(fallbackData));
+                  
+                  // Enviar para destinatário se online
+                  const recipientWs = connectedClients.get(recipientId);
+                  if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+                    recipientWs.send(JSON.stringify(fallbackData));
+                  }
+                  
+                } catch (fallbackError) {
+                  console.error('[WebSocket] Failed to save fallback message:', fallbackError);
+                }
+                
+                ws.send(JSON.stringify({
+                  type: 'audio_processing_error',
+                  error: result.error || 'Audio processing failed',
+                  fallbackSaved: !!newMessage
+                }));
+              }
+              
+            } catch (error) {
+              console.error('[WebSocket] Error processing audio message:', error);
+              
+              // Tentar salvar mensagem de emergência se ainda não foi salva
+              if (!newMessage && message.audioData) {
+                try {
+                  const conversation = await storage.getConversationById(message.conversationId, ws.userId);
+                  const recipient = conversation?.otherUser?.id ? await storage.getUser(conversation.otherUser.id) : null;
+                  
+                  newMessage = await storage.createMessage({
+                    conversationId: message.conversationId,
+                    senderId: ws.userId,
+                    originalText: '[Erro no processamento de áudio]',
+                    translatedText: '[Audio processing error]',
+                    targetLanguage: recipient?.preferredLanguage || 'en',
+                    messageType: 'audio',
+                    fileUrl: `data:audio/wav;base64,${message.audioData}`,
+                    fileName: 'voice_message_emergency.wav',
+                    fileType: 'audio/wav',
+                    replyToMessageId: message.replyToMessageId,
+                    isForwarded: message.isForwarded || false,
+                    isStarred: message.isStarred || false,
+                  });
+                  
+                  console.log('[WebSocket] Emergency audio message saved:', newMessage.id);
+                  
+                  ws.send(JSON.stringify({
+                    type: 'new_message',
+                    message: newMessage,
+                    emergencyFallback: true
+                  }));
+                  
+                } catch (emergencyError) {
+                  console.error('[WebSocket] Failed to save emergency message:', emergencyError);
+                }
+              }
+              
+              ws.send(JSON.stringify({
+                type: 'audio_processing_error',
+                error: 'Internal server error',
+                emergencyFallback: !!newMessage
               }));
             }
           }
@@ -762,16 +1093,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: 'ringing',
       });
 
+      // Get caller information for the notification
+      const caller = await storage.getUser(req.userId);
+      
+      // Create call object with caller info for notification
+      const callWithCaller = {
+        ...call,
+        caller: caller ? {
+          id: caller.id,
+          name: caller.username,
+          phone: caller.phoneNumber,
+          profilePhoto: caller.profilePhoto
+        } : null
+      };
+
       // Notify receiver via WebSocket
       const receiverWs = connectedClients.get(receiverId);
       if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
         receiverWs.send(JSON.stringify({
           type: 'incoming_call',
-          call,
+          call: callWithCaller,
         }));
+        console.log(`[WebSocket] Sent incoming_call notification to user ${receiverId}`);
+      } else {
+        console.log(`[WebSocket] Receiver ${receiverId} not connected or WebSocket closed`);
       }
 
-      res.json({ call });
+      res.json({ call: callWithCaller });
     } catch (error) {
       console.error('Create call error:', error);
       res.status(500).json({ message: 'Failed to create call' });
@@ -1465,6 +1813,155 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating call settings:", error);
       res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Set up multer for file uploads
+  const fileUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        const uploadPath = path.join(process.cwd(), UPLOAD_DIR, 'files');
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+      },
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const extension = path.extname(file.originalname);
+        cb(null, `file-${uniqueSuffix}${extension}`);
+      }
+    }),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+    fileFilter: (req, file, cb: FileFilterCallback) => {
+      const allowedTypes = [
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+        'video/mp4', 'video/webm', 'video/quicktime',
+        'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4',
+        'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain'
+      ];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Tipo de arquivo não permitido'));
+      }
+    }
+  });
+
+  // File upload endpoint
+  app.post('/api/upload', authenticateToken, fileUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: 'Arquivo é obrigatório' });
+      }
+
+      const fileUrl = `/uploads/files/${req.file.filename}`;
+      const fileSize = req.file.size;
+      const fileType = req.file.mimetype;
+      const fileName = req.file.originalname;
+
+      // Generate thumbnail for images and videos
+      let thumbnailUrl = null;
+      if (fileType.startsWith('image/')) {
+        thumbnailUrl = fileUrl; // For images, use the same URL as thumbnail
+      }
+
+      res.json({
+        fileUrl,
+        fileName,
+        fileSize,
+        fileType,
+        thumbnailUrl
+      });
+    } catch (error) {
+      console.error('File upload error:', error);
+      res.status(500).json({ message: 'Falha no upload do arquivo' });
+    }
+  });
+
+  // Add reaction to message
+  app.post('/api/messages/:messageId/reactions', authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const messageId = parseInt(req.params.messageId);
+      const { emoji } = req.body;
+
+      if (!emoji) {
+        return res.status(400).json({ message: 'Emoji é obrigatório' });
+      }
+
+      const reaction = await storage.addMessageReaction(messageId, req.userId, emoji);
+      
+      // Broadcast reaction to WebSocket clients
+      const message = await storage.getMessageById(messageId);
+      if (message) {
+        const conversation = await storage.getConversationById(message.conversationId, req.userId);
+        if (conversation) {
+          const recipientId = conversation.otherUser?.id;
+          const recipientWs = connectedClients.get(recipientId);
+          if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+            recipientWs.send(JSON.stringify({
+              type: 'reaction_added',
+              messageId,
+              reaction
+            }));
+          }
+        }
+      }
+
+      res.json({ reaction });
+    } catch (error) {
+      console.error('Add reaction error:', error);
+      res.status(500).json({ message: 'Falha ao adicionar reação' });
+    }
+  });
+
+  // Remove reaction from message
+  app.delete('/api/messages/:messageId/reactions', authenticateToken, async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const messageId = parseInt(req.params.messageId);
+      const { emoji } = req.body;
+
+      if (!emoji) {
+        return res.status(400).json({ message: 'Emoji é obrigatório' });
+      }
+
+      await storage.removeMessageReaction(messageId, req.userId, emoji);
+      
+      // Broadcast reaction removal to WebSocket clients
+      const message = await storage.getMessageById(messageId);
+      if (message) {
+        const conversation = await storage.getConversationById(message.conversationId, req.userId);
+        if (conversation) {
+          const recipientId = conversation.otherUser?.id;
+          const recipientWs = connectedClients.get(recipientId);
+          if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+            recipientWs.send(JSON.stringify({
+              type: 'reaction_removed',
+              messageId,
+              emoji,
+              userId: req.userId
+            }));
+          }
+        }
+      }
+
+      res.json({ message: 'Reação removida com sucesso' });
+    } catch (error) {
+      console.error('Remove reaction error:', error);
+      res.status(500).json({ message: 'Falha ao remover reação' });
     }
   });
 

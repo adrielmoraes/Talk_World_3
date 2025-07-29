@@ -38,8 +38,8 @@ export default defineConfig({
       strict: false,
       allow: [".."]
     },
-    hmr: {
-      port: 5173
-    }
+    hmr: false,
+    host: '0.0.0.0',
+    port: 5173
   },
 });

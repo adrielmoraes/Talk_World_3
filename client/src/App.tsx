@@ -16,6 +16,7 @@ import StorageSettings from "./pages/storage-settings";
 import NotFoundPage from "./pages/not-found";
 import ConversationsSettings from "./pages/conversations-settings";
 import CallsSettings from "./pages/calls-settings";
+import CallManager from "@/components/call-manager";
 
 
 function Router() {
@@ -68,7 +69,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <div className="min-h-screen bg-gray-50 dark:bg-whatsapp-dark">
-
+          <CallManager />
           <Toaster />
           <Router />
         </div>

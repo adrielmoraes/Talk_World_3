@@ -18,7 +18,7 @@ export default function SettingsTab() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const { data: userData } = useQuery({
+  const { data: userData } = useQuery<{ user: any }>({
     queryKey: ["/api/user/me"],
     enabled: !!localStorage.getItem("token"),
   });

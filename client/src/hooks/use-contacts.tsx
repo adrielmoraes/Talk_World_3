@@ -44,13 +44,13 @@ export function useContacts() {
   const { toast } = useToast();
 
   // Get user's contacts
-  const { data: contactsData, isLoading: isLoadingContacts, refetch: refetchContacts } = useQuery({
+  const { data: contactsData, isLoading: isLoadingContacts, refetch: refetchContacts } = useQuery<{ contacts: Contact[] }>({
     queryKey: ['/api/contacts'],
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   // Get sync history
-  const { data: syncHistoryData, isLoading: isLoadingSyncHistory } = useQuery({
+  const { data: syncHistoryData, isLoading: isLoadingSyncHistory } = useQuery<{ history: ContactSyncSession[] }>({
     queryKey: ['/api/contacts/sync-history'],
     staleTime: 60 * 1000, // Cache for 1 minute
   });
@@ -264,8 +264,8 @@ export function useContacts() {
 
   return {
     // Data
-    contacts: contactsData?.contacts || [],
-    syncHistory: syncHistoryData?.history || [],
+    contacts: (contactsData?.contacts || []) as Contact[],
+    syncHistory: (syncHistoryData?.history || []) as ContactSyncSession[],
     syncProgress,
     
     // Loading states

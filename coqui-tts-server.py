@@ -14,6 +14,12 @@ from TTS.api import TTS
 import tempfile
 import logging
 
+# Set environment variables to accept Coqui TTS license automatically
+os.environ["COQUI_TOS_AGREED"] = "1"
+os.environ["TTS_CACHE_PATH"] = os.path.expanduser("~/.local/share/tts")
+os.environ["COQUI_STUDIO_TOKEN"] = "dummy"
+os.environ["COQUI_AGREE_TO_LICENSE"] = "1"
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,10 +27,20 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# Initialize TTS model
+# Initialize TTS model with error handling
 print("Loading TTS model...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
-print("TTS model loaded successfully!")
+try:
+    # Try to use a simpler model first
+    tts = TTS("tts_models/en/ljspeech/tacotron2-DDC")
+    print("TTS model (Tacotron2) loaded successfully!")
+except Exception as e:
+    print(f"Failed to load Tacotron2, trying XTTS v2: {e}")
+    try:
+        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+        print("TTS model (XTTS v2) loaded successfully!")
+    except Exception as e2:
+        print(f"Failed to load XTTS v2: {e2}")
+        tts = None
 
 # Language mapping for XTTS v2
 LANGUAGE_MAP = {
@@ -53,6 +69,9 @@ def health_check():
 @app.route("/api/tts", methods=["POST"])
 def text_to_speech():
     try:
+        if tts is None:
+            return jsonify({"error": "TTS model not available"}), 503
+            
         data = request.get_json()
         
         if not data or "text" not in data:
@@ -73,13 +92,21 @@ def text_to_speech():
             output_path = tmp_file.name
         
         try:
-            # Generate speech
-            tts.tts_to_file(
-                text=text,
-                language=mapped_language,
-                file_path=output_path,
-                speed=speed
-            )
+            # Generate speech - adjust parameters based on model type
+            if "tacotron2" in str(tts.model_name).lower():
+                # Tacotron2 doesn't support language parameter
+                tts.tts_to_file(
+                    text=text,
+                    file_path=output_path
+                )
+            else:
+                # XTTS v2 supports language and speed
+                tts.tts_to_file(
+                    text=text,
+                    language=mapped_language,
+                    file_path=output_path,
+                    speed=speed
+                )
             
             # Return the audio file
             return send_file(

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
 
 interface WebSocketMessage {
@@ -9,12 +9,34 @@ interface WebSocketMessage {
 interface SendMessageData {
   conversationId: number;
   text: string;
+  messageType?: 'text' | 'image' | 'video' | 'audio' | 'document';
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: number;
+  fileType?: string;
+  thumbnailUrl?: string;
+  replyToMessageId?: string;
+}
+
+interface IncomingCall {
+  id: number;
+  callerId: number;
+  receiverId: number;
+  status: string;
+  startedAt: string;
+  caller?: {
+    id: number;
+    name: string;
+    phone: string;
+    profilePhoto?: string;
+  };
 }
 
 export function useWebSocket() {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const isConnectedRef = useRef(false);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
 
   const connect = useCallback((token: string) => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -85,6 +107,7 @@ export function useWebSocket() {
           case "incoming_call":
             // Handle incoming call notification
             console.log("Incoming call:", message.call);
+            setIncomingCall(message.call);
             break;
 
           case "webrtc_signal":
@@ -254,11 +277,29 @@ export function useWebSocket() {
     }
   }, []);
 
+  const sendAudioMessage = useCallback((data: {
+    conversationId: number;
+    audioData: string; // base64 encoded audio
+    senderLanguage: string;
+    recipientLanguage: string;
+  }) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'send_audio_message',
+        ...data
+      }));
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       disconnect();
     };
   }, [disconnect]);
+
+  const clearIncomingCall = useCallback(() => {
+    setIncomingCall(null);
+  }, []);
 
   return {
     connect,
@@ -268,6 +309,9 @@ export function useWebSocket() {
     requestUserStatus,
     sendWebRTCSignal,
     sendVoiceAudioChunk,
+    sendAudioMessage,
     isConnected: isConnectedRef.current,
+    incomingCall,
+    clearIncomingCall,
   };
 }

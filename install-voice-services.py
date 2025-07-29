@@ -118,7 +118,7 @@ CORS(app)
 
 # Initialize TTS model
 print("Loading TTS model...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+tts = TTS(model_name="xtts_v2.0.2")
 print("TTS model loaded successfully!")
 
 # Language mapping for XTTS v2

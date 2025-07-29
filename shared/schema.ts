@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, varchar, uuid } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -66,6 +66,19 @@ export const messages = pgTable("messages", {
   originalText: text("original_text").notNull(),
   translatedText: text("translated_text"),
   targetLanguage: text("target_language"),
+  messageType: text("message_type").default("text"),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
+  fileType: text("file_type"),
+  thumbnailUrl: text("thumbnail_url"),
+  duration: integer("duration"),
+  replyToMessageId: integer("reply_to_message_id"),
+  isForwarded: boolean("is_forwarded").default(false),
+  isStarred: boolean("is_starred").default(false),
+  isDeleted: boolean("is_deleted").default(false),
+  deletedAt: timestamp("deleted_at"),
+  editedAt: timestamp("edited_at"),
   isDelivered: boolean("is_delivered").notNull().default(false),
   isRead: boolean("is_read").notNull().default(false),
   deliveredAt: timestamp("delivered_at"),
@@ -92,6 +105,50 @@ export const userActivity = pgTable("user_activity", {
   conversationId: integer("conversation_id").references(() => conversations.id), // Para atividades específicas de conversa
   metadata: jsonb("metadata"), // Dados adicionais da atividade
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Tabela de reações de mensagens
+export const messageReactions = pgTable("message_reactions", {
+  id: serial("id").primaryKey(),
+  messageId: integer("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emoji: varchar("emoji", { length: 10 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Tabela de anexos de mensagens
+export const messageAttachments = pgTable("message_attachments", {
+  id: serial("id").primaryKey(),
+  messageId: integer("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  fileUrl: text("file_url").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size"),
+  fileType: text("file_type").notNull(),
+  thumbnailUrl: text("thumbnail_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Tabela de configurações de conversa por usuário
+export const conversationUserSettings = pgTable("conversation_user_settings", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  isMuted: boolean("is_muted").default(false),
+  mutedUntil: timestamp("muted_until"),
+  isArchived: boolean("is_archived").default(false),
+  isPinned: boolean("is_pinned").default(false),
+  customNotificationSound: text("custom_notification_sound"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Tabela de status de mensagens por usuário
+export const messageUserStatus = pgTable("message_user_status", {
+  id: serial("id").primaryKey(),
+  messageId: integer("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 20 }).notNull().default("sent"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
 // Relations
@@ -137,7 +194,7 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
   messages: many(messages),
 }));
 
-export const messagesRelations = relations(messages, ({ one }) => ({
+export const messagesRelations = relations(messages, ({ one, many }) => ({
   conversation: one(conversations, {
     fields: [messages.conversationId],
     references: [conversations.id],
@@ -146,6 +203,13 @@ export const messagesRelations = relations(messages, ({ one }) => ({
     fields: [messages.senderId],
     references: [users.id],
   }),
+  replyToMessage: one(messages, {
+    fields: [messages.replyToMessageId],
+    references: [messages.id],
+  }),
+  reactions: many(messageReactions),
+  attachments: many(messageAttachments),
+  userStatuses: many(messageUserStatus),
 }));
 
 export const callsRelations = relations(calls, ({ one }) => ({
@@ -169,6 +233,42 @@ export const userActivityRelations = relations(userActivity, ({ one }) => ({
   conversation: one(conversations, {
     fields: [userActivity.conversationId],
     references: [conversations.id],
+  }),
+}));
+
+export const messageReactionsRelations = relations(messageReactions, ({ one }) => ({
+  message: one(messages, {
+    fields: [messageReactions.messageId],
+    references: [messages.id],
+  }),
+  user: one(users, {
+    fields: [messageReactions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const messageAttachmentsRelations = relations(messageAttachments, ({ one }) => ({
+  message: one(messages, {
+    fields: [messageAttachments.messageId],
+    references: [messages.id],
+  }),
+}));
+
+export const conversationUserSettingsRelations = relations(conversationUserSettings, ({ one }) => ({
+  user: one(users, {
+    fields: [conversationUserSettings.userId],
+    references: [users.id],
+  }),
+}));
+
+export const messageUserStatusRelations = relations(messageUserStatus, ({ one }) => ({
+  message: one(messages, {
+    fields: [messageUserStatus.messageId],
+    references: [messages.id],
+  }),
+  user: one(users, {
+    fields: [messageUserStatus.userId],
+    references: [users.id],
   }),
 }));
 
@@ -219,6 +319,27 @@ export const insertUserActivitySchema = createInsertSchema(userActivity).omit({
   createdAt: true,
 });
 
+export const insertMessageReactionSchema = createInsertSchema(messageReactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertMessageAttachmentSchema = createInsertSchema(messageAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertConversationUserSettingsSchema = createInsertSchema(conversationUserSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMessageUserStatusSchema = createInsertSchema(messageUserStatus).omit({
+  id: true,
+  timestamp: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -237,6 +358,15 @@ export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Call = typeof calls.$inferSelect;
 export type InsertCall = z.infer<typeof insertCallSchema>;
 export const selectCallSchema = createSelectSchema(calls);
+
+export type MessageReaction = typeof messageReactions.$inferSelect;
+export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
+export type MessageAttachment = typeof messageAttachments.$inferSelect;
+export type InsertMessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
+export type ConversationUserSettings = typeof conversationUserSettings.$inferSelect;
+export type InsertConversationUserSettings = z.infer<typeof insertConversationUserSettingsSchema>;
+export type MessageUserStatus = typeof messageUserStatus.$inferSelect;
+export type InsertMessageUserStatus = z.infer<typeof insertMessageUserStatusSchema>;
 
 // Contact sync sessions schema  
 export const selectContactSyncSessionSchema = createSelectSchema(contactSyncSessions);
@@ -291,3 +421,8 @@ export const conversationSettings = pgTable('conversation_settings', {
 
 export const insertConversationSettingsSchema = createInsertSchema(conversationSettings);
 export const selectConversationSettingsSchema = createSelectSchema(conversationSettings);
+
+// Export types for notification settings, user storage data, and conversation settings
+export type NotificationSettings = typeof notificationSettings.$inferSelect;
+export type UserStorageData = typeof userStorageData.$inferSelect;
+export type ConversationSettings = typeof conversationSettings.$inferSelect;

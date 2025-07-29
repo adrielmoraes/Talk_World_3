@@ -29,7 +29,7 @@ export function useTranslation() {
   const { data: supportedLanguages, isLoading: isLoadingLanguages } = useQuery({
     queryKey: ['/api/translation/languages'],
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-  });
+  }) as { data: { languages: SupportedLanguage[] } | undefined, isLoading: boolean };
 
   // Translate text
   const translateText = useCallback(async (

@@ -10,6 +10,7 @@ import {
   notificationSettings,
   userStorageData,
   conversationSettings,
+  messageReactions,
   type User,
   type OtpCode,
   type Contact,
@@ -18,6 +19,7 @@ import {
   type Call,
   type ContactSyncSession,
   type UserActivity,
+
   insertUserSchema,
   insertOtpSchema,
   insertContactSchema,
@@ -29,7 +31,8 @@ import {
   insertNotificationSettingsSchema,
   insertUserStorageDataSchema,
   insertConversationSettingsSchema,
-} from "@shared/schema";
+  insertMessageReactionSchema,
+} from "../shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, inArray, ne } from "drizzle-orm";
 
@@ -43,6 +46,70 @@ type InsertMessage = typeof messages.$inferInsert;
 type InsertCall = typeof calls.$inferInsert;
 type InsertContactSyncSession = typeof contactSyncSessions.$inferInsert;
 type InsertUserActivity = typeof userActivity.$inferInsert;
+type InsertNotificationSettings = typeof notificationSettings.$inferInsert;
+type InsertUserStorageData = typeof userStorageData.$inferInsert;
+type InsertConversationSettings = typeof conversationSettings.$inferInsert;
+type InsertMessageReaction = typeof messageReactions.$inferInsert;
+
+// Local type definitions
+type NotificationSettings = typeof notificationSettings.$inferSelect;
+type UserStorageData = typeof userStorageData.$inferSelect;
+type ConversationSettings = typeof conversationSettings.$inferSelect;
+type MessageReaction = typeof messageReactions.$inferSelect;
+
+// Types are now imported from schema
+
+// Extended types for joined queries
+type ContactWithUser = Contact & {
+  user: {
+    id: number;
+    username: string;
+    phoneNumber: string;
+    preferredLanguage: string;
+    profilePhoto?: string | null;
+    isVerified: boolean;
+  } | null;
+};
+
+type ConversationWithParticipant = {
+  id: number;
+  translationEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  participant1Id: number;
+  participant2Id: number;
+  otherUser: {
+    id: number;
+    username: string;
+    profilePhoto: string | null;
+    isVerified: boolean;
+  };
+};
+
+type MessageWithSender = Message & {
+  sender: {
+    id: number;
+    username: string;
+    profilePhoto?: string | null;
+  };
+  reactions?: MessageReaction[];
+};
+
+type CallWithCaller = Call & {
+  caller: {
+    id: number;
+    username: string;
+    profilePhoto?: string | null;
+  };
+};
+
+
+
+type UserLastSeen = {
+  userId: number;
+  lastSeenAt: Date | null;
+  isOnline: boolean;
+};
 
 interface IStorage {
   // User methods
@@ -58,7 +125,7 @@ interface IStorage {
   markOtpAsUsed(id: number): Promise<void>;
 
   // Contact methods
-  getUserContacts(userId: number): Promise<any[]>;
+  getUserContacts(userId: number): Promise<ContactWithUser[]>;
   addContact(userId: number, contactUserId: number, contactName?: string, phoneNumber?: string): Promise<Contact>;
   syncContacts(userId: number, contacts: Array<{name: string, phoneNumber: string}>): Promise<ContactSyncSession>;
   findUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[]>;
@@ -67,20 +134,24 @@ interface IStorage {
   getContactSyncHistory(userId: number): Promise<ContactSyncSession[]>;
 
   // Conversation methods
-  getUserConversations(userId: number): Promise<any[]>;
-  getConversationById(id: number, userId: number): Promise<any>;
+  getUserConversations(userId: number): Promise<ConversationWithParticipant[]>;
+  getConversationById(id: number, userId: number): Promise<ConversationWithParticipant | null>;
   getConversationByParticipants(user1Id: number, user2Id: number): Promise<Conversation | undefined>;
   createConversation(insertConversation: InsertConversation): Promise<Conversation>;
   updateConversationTranslation(id: number, enabled: boolean): Promise<Conversation>;
 
   // Message methods
   createMessage(insertMessage: InsertMessage): Promise<Message>;
-  getConversationMessages(conversationId: number): Promise<any[]>;
-  getUnreadMessages(conversationId: number, userId: number): Promise<any[]>;
+  getConversationMessages(conversationId: number): Promise<MessageWithSender[]>;
+  getUnreadMessages(conversationId: number, userId: number): Promise<MessageWithSender[]>;
   markMessagesAsRead(conversationId: number, userId: number): Promise<void>;
+  getMessageById(messageId: number): Promise<MessageWithSender | null>;
+  markMessageAsDelivered(messageId: number): Promise<void>;
+  addMessageReaction(messageId: number, userId: number, emoji: string): Promise<MessageReaction>;
+  removeMessageReaction(messageId: number, userId: number, emoji: string): Promise<void>;
 
   // Call methods
-  getUserCalls(userId: number): Promise<any[]>;
+  getUserCalls(userId: number): Promise<CallWithCaller[]>;
   createCall(insertCall: InsertCall): Promise<Call>;
   updateCall(id: number, updates: Partial<Call>): Promise<Call>;
 
@@ -89,16 +160,16 @@ interface IStorage {
   updateUserActivity(userId: number, activityType: string, conversationId?: number, metadata?: any): Promise<UserActivity>;
   getUserLastActivity(userId: number): Promise<Date | null>;
   getOnlineUsers(): Promise<User[]>;
-  getUsersLastSeen(userIds: number[]): Promise<{userId: number, lastSeenAt: Date, isOnline: boolean}[]>;
-  cleanupOldActivity(olderThanDays: number): Promise<void>;
+  getUsersLastSeen(userIds: number[]): Promise<UserLastSeen[]>;
+  cleanupOldActivity(olderThanDays?: number): Promise<void>;
 
   // Settings methods
-  getUserNotificationSettings(userId: number): Promise<any>;
-  updateNotificationSettings(userId: number, settings: Partial<any>): Promise<any>;
-  getUserStorageData(userId: number): Promise<any>;
-  updateUserStorageData(userId: number, data: Partial<any>): Promise<any>;
-  getUserConversationSettings(userId: number): Promise<any>;
-  updateUserConversationSettings(userId: number, settings: Partial<any>): Promise<any>;
+  getUserNotificationSettings(userId: number): Promise<NotificationSettings>;
+  updateNotificationSettings(userId: number, settings: Partial<InsertNotificationSettings>): Promise<NotificationSettings>;
+  getUserStorageData(userId: number): Promise<UserStorageData>;
+  updateUserStorageData(userId: number, data: Partial<InsertUserStorageData>): Promise<UserStorageData>;
+  getUserConversationSettings(userId: number): Promise<ConversationSettings>;
+  updateUserConversationSettings(userId: number, settings: Partial<InsertConversationSettings>): Promise<ConversationSettings>;
   clearUserCache(userId: number): Promise<void>;
   deleteAllUserData(userId: number): Promise<void>;
 }
@@ -172,7 +243,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Contact methods
-  async getUserContacts(userId: number): Promise<any[]> {
+  async getUserContacts(userId: number): Promise<ContactWithUser[]> {
     const result = await db
       .select({
         id: contacts.id,
@@ -184,7 +255,7 @@ export class DatabaseStorage implements IStorage {
         nickname: contacts.nickname,
         syncedAt: contacts.syncedAt,
         createdAt: contacts.createdAt,
-        contactUser: {
+        user: {
           id: users.id,
           username: users.username,
           phoneNumber: users.phoneNumber,
@@ -368,16 +439,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Conversation methods
-  async getUserConversations(userId: number): Promise<any[]> {
+  async getUserConversations(userId: number): Promise<ConversationWithParticipant[]> {
     const result = await db
       .select({
         id: conversations.id,
         translationEnabled: conversations.translationEnabled,
+        createdAt: conversations.createdAt,
         updatedAt: conversations.updatedAt,
+        participant1Id: conversations.participant1Id,
+        participant2Id: conversations.participant2Id,
         otherUser: {
           id: users.id,
           username: users.username,
           profilePhoto: users.profilePhoto,
+          isVerified: users.isVerified,
         }
       })
       .from(conversations)
@@ -399,13 +474,15 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getConversationById(conversationId: number, userId: number) {
+  async getConversationById(conversationId: number, userId: number): Promise<ConversationWithParticipant | null> {
     const conversation = await db
       .select({
         id: conversations.id,
         translationEnabled: conversations.translationEnabled,
         createdAt: conversations.createdAt,
         updatedAt: conversations.updatedAt,
+        participant1Id: conversations.participant1Id,
+        participant2Id: conversations.participant2Id,
         otherUser: {
           id: users.id,
           username: users.username,
@@ -500,20 +577,41 @@ export class DatabaseStorage implements IStorage {
       .where(eq(messages.id, messageId));
   }
 
-  async getUnreadMessages(conversationId: number, userId: number): Promise<any[]> {
+  async getUnreadMessages(conversationId: number, userId: number): Promise<MessageWithSender[]> {
     const result = await db
       .select({
         id: messages.id,
-        senderId: messages.senderId,
         conversationId: messages.conversationId,
+        senderId: messages.senderId,
         originalText: messages.originalText,
         translatedText: messages.translatedText,
         targetLanguage: messages.targetLanguage,
+        messageType: messages.messageType,
+        fileUrl: messages.fileUrl,
+        fileName: messages.fileName,
+        fileSize: messages.fileSize,
+        fileType: messages.fileType,
+        thumbnailUrl: messages.thumbnailUrl,
+        duration: messages.duration,
+        replyToMessageId: messages.replyToMessageId,
+        isForwarded: messages.isForwarded,
+        isStarred: messages.isStarred,
+        isDeleted: messages.isDeleted,
+        deletedAt: messages.deletedAt,
+        editedAt: messages.editedAt,
         isDelivered: messages.isDelivered,
         isRead: messages.isRead,
+        deliveredAt: messages.deliveredAt,
+        readAt: messages.readAt,
         createdAt: messages.createdAt,
+        sender: {
+          id: users.id,
+          username: users.username,
+          profilePhoto: users.profilePhoto,
+        }
       })
       .from(messages)
+      .innerJoin(users, eq(messages.senderId, users.id))
       .where(
         and(
           eq(messages.conversationId, conversationId),
@@ -526,84 +624,103 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Notification Settings
-  async getUserNotificationSettings(userId: number) {
-    const settings = await db.select()
+  async getUserNotificationSettings(userId: number): Promise<NotificationSettings> {
+    const [settings] = await db
+      .select()
       .from(notificationSettings)
-      .where(eq(notificationSettings.userId, userId))
-      .limit(1);
-
-    if (settings.length === 0) {
+      .where(eq(notificationSettings.userId, userId));
+    
+    if (!settings) {
       // Create default settings if none exist
-      const defaultSettings = await db.insert(notificationSettings)
-        .values({ userId })
+      const [defaultSettings] = await db
+        .insert(notificationSettings)
+        .values({ 
+          userId,
+          messageNotifications: true,
+          callNotifications: true,
+          soundEnabled: true,
+          vibrationEnabled: true
+        })
         .returning();
-      return defaultSettings[0];
+      return defaultSettings;
     }
 
-    return settings[0];
+    return settings;
   }
 
-  async updateNotificationSettings(userId: number, settings: Partial<typeof notificationSettings.$inferInsert>) {
-    await db.update(notificationSettings)
+  async updateNotificationSettings(userId: number, settings: Partial<InsertNotificationSettings>): Promise<NotificationSettings> {
+    const [updated] = await db
+      .update(notificationSettings)
       .set({ ...settings, updatedAt: new Date() })
-      .where(eq(notificationSettings.userId, userId));
-
-    return this.getUserNotificationSettings(userId);
+      .where(eq(notificationSettings.userId, userId))
+      .returning();
+    
+    return updated || await this.getUserNotificationSettings(userId);
   }
 
   // User Storage Data
-  async getUserStorageData(userId: number) {
-    const storage = await db.select()
+  async getUserStorageData(userId: number): Promise<UserStorageData> {
+    const [storage] = await db
+      .select()
       .from(userStorageData)
-      .where(eq(userStorageData.userId, userId))
-      .limit(1);
-
-    if (storage.length === 0) {
-      // Create default storage data if none exist
-      const defaultStorage = await db.insert(userStorageData)
-        .values({ userId })
-        .returning();
-      return defaultStorage[0];
-    }
-
-    return storage[0];
-  }
-
-  async updateUserStorageData(userId: number, data: Partial<typeof userStorageData.$inferInsert>) {
-    await db.update(userStorageData)
-      .set({ ...data, updatedAt: new Date() })
       .where(eq(userStorageData.userId, userId));
 
-    return this.getUserStorageData(userId);
+    if (!storage) {
+      // Create default storage data if none exist
+      const [defaultStorage] = await db
+        .insert(userStorageData)
+        .values({ 
+          userId
+        })
+        .returning();
+      return defaultStorage;
+    }
+
+    return storage;
+  }
+
+  async updateUserStorageData(userId: number, data: Partial<InsertUserStorageData>): Promise<UserStorageData> {
+    const [updated] = await db.update(userStorageData)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(userStorageData.userId, userId))
+      .returning();
+
+    return updated || await this.getUserStorageData(userId);
   }
 
   // User Conversation Settings
-  async getUserConversationSettings(userId: number) {
-    const settings = await db.select()
+  async getUserConversationSettings(userId: number): Promise<ConversationSettings> {
+    const [settings] = await db
+      .select()
       .from(conversationSettings)
-      .where(eq(conversationSettings.userId, userId))
-      .limit(1);
-
-    if (settings.length === 0) {
-      // Create default settings if none exist
-      const defaultSettings = await db.insert(conversationSettings)
-        .values({ userId })
-        .returning();
-      return defaultSettings[0];
-    }
-
-    return settings[0];
-  }
-
-  async updateUserConversationSettings(userId: number, settings: Partial<typeof conversationSettings.$inferInsert>) {
-    await db.update(conversationSettings)
-      .set({ ...settings, updatedAt: new Date() })
       .where(eq(conversationSettings.userId, userId));
 
-    return this.getUserConversationSettings(userId);
+    if (!settings) {
+      // Create default settings if none exist
+      const [defaultSettings] = await db
+        .insert(conversationSettings)
+        .values({ 
+          userId,
+          defaultTranslationEnabled: true,
+          defaultTargetLanguage: 'en-US'
+        })
+        .returning();
+      return defaultSettings;
+    }
+
+    return settings;
   }
 
-  async clearUserCache(userId: number) {
+  async updateUserConversationSettings(userId: number, settings: Partial<InsertConversationSettings>): Promise<ConversationSettings> {
+    const [updated] = await db.update(conversationSettings)
+      .set({ ...settings, updatedAt: new Date() })
+      .where(eq(conversationSettings.userId, userId))
+      .returning();
+
+    return updated || await this.getUserConversationSettings(userId);
+  }
+
+  async clearUserCache(userId: number): Promise<void> {
     const currentData = await this.getUserStorageData(userId);
     const totalUsed = currentData.totalUsed || 0;
     const cache = currentData.cache || 0;
@@ -615,7 +732,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async deleteAllUserData(userId: number) {
+  async deleteAllUserData(userId: number): Promise<void> {
     // Delete in order to respect foreign key constraints
     await db.delete(messages).where(eq(messages.senderId, userId));
     await db.delete(calls).where(or(
@@ -646,12 +763,22 @@ export class DatabaseStorage implements IStorage {
         originalText: insertMessage.originalText,
         translatedText: insertMessage.translatedText,
         targetLanguage: insertMessage.targetLanguage,
+        messageType: insertMessage.messageType || 'text',
+        fileUrl: insertMessage.fileUrl,
+        fileName: insertMessage.fileName,
+        fileSize: insertMessage.fileSize,
+        fileType: insertMessage.fileType,
+        thumbnailUrl: insertMessage.thumbnailUrl,
+        duration: insertMessage.duration,
+        replyToMessageId: insertMessage.replyToMessageId,
+        isForwarded: insertMessage.isForwarded,
+        isStarred: insertMessage.isStarred,
       })
       .returning();
     return message;
   }
 
-  async getConversationMessages(conversationId: number): Promise<any[]> {
+  async getConversationMessages(conversationId: number): Promise<MessageWithSender[]> {
     const result = await db
       .select({
         id: messages.id,
@@ -660,12 +787,28 @@ export class DatabaseStorage implements IStorage {
         originalText: messages.originalText,
         translatedText: messages.translatedText,
         targetLanguage: messages.targetLanguage,
+        messageType: messages.messageType,
+        fileUrl: messages.fileUrl,
+        fileName: messages.fileName,
+        fileSize: messages.fileSize,
+        fileType: messages.fileType,
+        thumbnailUrl: messages.thumbnailUrl,
+        duration: messages.duration,
+        replyToMessageId: messages.replyToMessageId,
+        isForwarded: messages.isForwarded,
+        isStarred: messages.isStarred,
+        isDeleted: messages.isDeleted,
+        deletedAt: messages.deletedAt,
+        editedAt: messages.editedAt,
         isDelivered: messages.isDelivered,
         isRead: messages.isRead,
+        deliveredAt: messages.deliveredAt,
+        readAt: messages.readAt,
         createdAt: messages.createdAt,
         sender: {
           id: users.id,
           username: users.username,
+          profilePhoto: users.profilePhoto,
         }
       })
       .from(messages)
@@ -673,12 +816,45 @@ export class DatabaseStorage implements IStorage {
       .where(eq(messages.conversationId, conversationId))
       .orderBy(messages.createdAt);
 
+    // Buscar reações para cada mensagem
+    const messageIds = result.map(msg => msg.id);
+    let reactions: any[] = [];
+    
+    if (messageIds.length > 0) {
+      const { messageReactions } = await import("../shared/schema");
+      reactions = await db
+        .select({
+          messageId: messageReactions.messageId,
+          userId: messageReactions.userId,
+          emoji: messageReactions.emoji,
+          createdAt: messageReactions.createdAt,
+        })
+        .from(messageReactions)
+        .innerJoin(users, eq(messageReactions.userId, users.id))
+        .where(inArray(messageReactions.messageId, messageIds));
+    }
+
+    // Agrupar reações por mensagem
+    const reactionsMap = reactions.reduce((acc, reaction) => {
+      if (!acc[reaction.messageId]) {
+        acc[reaction.messageId] = [];
+      }
+      acc[reaction.messageId].push(reaction);
+      return acc;
+    }, {} as Record<number, any[]>);
+
+    // Adicionar reações às mensagens
+    const messagesWithReactions = result.map(message => ({
+      ...message,
+      reactions: reactionsMap[message.id] || []
+    }));
+
     console.log(`[Storage] Found ${result.length} messages for conversation ${conversationId}`);
-    return result;
+    return messagesWithReactions;
   }
 
   // Call methods
-  async getUserCalls(userId: number): Promise<any[]> {
+  async getUserCalls(userId: number): Promise<CallWithCaller[]> {
     const result = await db
       .select({
         id: calls.id,
@@ -742,23 +918,59 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserActivity(userId: number, activityType: string, conversationId?: number, metadata?: any): Promise<UserActivity> {
-    const [activity] = await db
-      .insert(userActivity)
-      .values({
-        userId,
-        activityType,
-        conversationId,
-        metadata
-      })
-      .returning();
+    const maxRetries = 3;
+    let lastError: Error | null = null;
 
-    // Atualizar lastActivityAt do usuário
-    await db
-      .update(users)
-      .set({ lastActivityAt: new Date() })
-      .where(eq(users.id, userId));
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Usar transação para garantir consistência
+        const result = await db.transaction(async (tx) => {
+          const [activity] = await tx
+            .insert(userActivity)
+            .values({
+              userId,
+              activityType,
+              conversationId,
+              metadata
+            })
+            .returning();
 
-    return activity;
+          // Atualizar lastActivityAt do usuário
+          await tx
+            .update(users)
+            .set({ lastActivityAt: new Date() })
+            .where(eq(users.id, userId));
+
+          return activity;
+        });
+
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Erro na tentativa ${attempt}/${maxRetries} de updateUserActivity:`, {
+          userId,
+          activityType,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+
+        // Se não é o último retry, aguardar antes de tentar novamente
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Backoff exponencial, máximo 5s
+          console.log(`Aguardando ${delay}ms antes da próxima tentativa...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    // Se chegou aqui, todas as tentativas falharam
+    console.error('Todas as tentativas de updateUserActivity falharam:', {
+      userId,
+      activityType,
+      finalError: lastError?.message
+    });
+    
+    throw new Error(`Falha ao atualizar atividade do usuário após ${maxRetries} tentativas: ${lastError?.message}`);
   }
 
   async getUserLastActivity(userId: number): Promise<Date | null> {
@@ -777,7 +989,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.isOnline, true));
   }
 
-  async getUsersLastSeen(userIds: number[]): Promise<{userId: number, lastSeenAt: Date, isOnline: boolean}[]> {
+  async getUsersLastSeen(userIds: number[]): Promise<UserLastSeen[]> {
     const result = await db
       .select({
         userId: users.id,
@@ -801,6 +1013,93 @@ export class DatabaseStorage implements IStorage {
         // Adicionar condição de data quando disponível
       ));
   }
+
+  // Message reaction methods
+  async addMessageReaction(messageId: number, userId: number, emoji: string): Promise<MessageReaction> {
+    const { messageReactions } = await import("../shared/schema");
+    
+    // Check if reaction already exists
+    const [existingReaction] = await db
+      .select()
+      .from(messageReactions)
+      .where(
+        and(
+          eq(messageReactions.messageId, messageId),
+          eq(messageReactions.userId, userId),
+          eq(messageReactions.emoji, emoji)
+        )
+      );
+
+    if (existingReaction) {
+      return existingReaction;
+    }
+
+    const [reaction] = await db
+      .insert(messageReactions)
+      .values({
+        messageId,
+        userId,
+        emoji
+      })
+      .returning();
+
+    return reaction;
+  }
+
+  async removeMessageReaction(messageId: number, userId: number, emoji: string): Promise<void> {
+    const { messageReactions } = await import("../shared/schema");
+    
+    await db
+      .delete(messageReactions)
+      .where(
+        and(
+          eq(messageReactions.messageId, messageId),
+          eq(messageReactions.userId, userId),
+          eq(messageReactions.emoji, emoji)
+        )
+      );
+  }
+
+  async getMessageById(messageId: number): Promise<MessageWithSender | null> {
+    const [message] = await db
+      .select({
+        id: messages.id,
+        conversationId: messages.conversationId,
+        senderId: messages.senderId,
+        originalText: messages.originalText,
+        translatedText: messages.translatedText,
+        targetLanguage: messages.targetLanguage,
+        messageType: messages.messageType,
+        fileUrl: messages.fileUrl,
+        fileName: messages.fileName,
+        fileSize: messages.fileSize,
+        fileType: messages.fileType,
+        thumbnailUrl: messages.thumbnailUrl,
+        duration: messages.duration,
+        replyToMessageId: messages.replyToMessageId,
+        isForwarded: messages.isForwarded,
+        isStarred: messages.isStarred,
+        isDeleted: messages.isDeleted,
+        deletedAt: messages.deletedAt,
+        editedAt: messages.editedAt,
+        isDelivered: messages.isDelivered,
+        isRead: messages.isRead,
+        deliveredAt: messages.deliveredAt,
+        readAt: messages.readAt,
+        createdAt: messages.createdAt,
+        sender: {
+          id: users.id,
+          username: users.username,
+          profilePhoto: users.profilePhoto,
+        }
+      })
+      .from(messages)
+      .innerJoin(users, eq(messages.senderId, users.id))
+      .where(eq(messages.id, messageId));
+
+    return message || null;
+  }
+
 }
 
 export const storage = new DatabaseStorage();

@@ -8,7 +8,7 @@ const openai = new OpenAI({
 });
 
 // Voice service configuration
-const WHISPER_STT_SERVER_URL = process.env.WHISPER_STT_SERVER_URL || 'http://localhost:5001';
+const WHISPER_STT_SERVER_URL = process.env.WHISPER_STT_SERVER_URL || 'http://127.0.0.1:5001';
 const WHISPER_STT_ENABLED = process.env.WHISPER_STT_ENABLED === 'true';
 const COQUI_TTS_SERVER_URL = process.env.COQUI_TTS_SERVER_URL || 'http://localhost:5002';
 const COQUI_TTS_ENABLED = process.env.COQUI_TTS_ENABLED === 'true';

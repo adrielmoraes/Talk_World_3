@@ -90,6 +90,17 @@ export class GroqTranslationService {
     sourceLanguage?: string
   ): Promise<TranslationResult> {
     try {
+      // Skip translation for emoji-only messages
+      if (this.isEmojiOnly(text)) {
+        return {
+          originalText: text,
+          translatedText: text,
+          sourceLanguage: sourceLanguage || 'unknown',
+          targetLanguage,
+          confidence: 1.0
+        };
+      }
+
       // Detect source language if not provided
       let detectedSourceLang = sourceLanguage;
       if (!sourceLanguage) {
@@ -171,6 +182,17 @@ export class GroqTranslationService {
   }): Promise<TranslationResult> {
     try {
       const { text, targetLanguage, sourceLanguage, context } = params;
+      
+      // Skip translation for emoji-only messages
+      if (this.isEmojiOnly(text)) {
+        return {
+          originalText: text,
+          translatedText: text,
+          sourceLanguage: sourceLanguage || 'unknown',
+          targetLanguage,
+          confidence: 1.0
+        };
+      }
       
       let detectedSourceLang = sourceLanguage;
       if (!sourceLanguage) {
@@ -287,6 +309,28 @@ export class GroqTranslationService {
   /**
    * Fallback language detection using simple patterns
    */
+  private isEmojiOnly(text: string): boolean {
+    const trimmedText = text.trim();
+    
+    if (!trimmedText) {
+      return false;
+    }
+    
+    // Check if text contains any alphabetic characters (letters, numbers, punctuation)
+    const hasText = /[a-zA-Z0-9\u00C0-\u017F\u0400-\u04FF\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff.,!?;:"'()\[\]{}\-_+=<>@#$%^&*|\\~`]/.test(trimmedText);
+    
+    // If it has text characters, it's not emoji-only
+    if (hasText) {
+      return false;
+    }
+    
+    // Check if it has emoji-like characters using basic emoji ranges
+    // This covers most common emojis without using unicode flag
+    const hasEmoji = /[\uD83C-\uDBFF\uDC00-\uDFFF]|[\u2600-\u27FF]|[\u2B00-\u2BFF]|[\u3000-\u303F]|[\uFE00-\uFE0F]/.test(trimmedText);
+    
+    return hasEmoji && trimmedText.length > 0;
+  }
+
   private fallbackLanguageDetection(text: string): LanguageDetectionResult {
     const lowerText = text.toLowerCase();
 

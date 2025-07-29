@@ -10,6 +10,27 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 
+interface StorageSettings {
+  autoDownloadPhotos: boolean;
+  autoDownloadVideos: boolean;
+  autoDownloadAudio: boolean;
+}
+
+interface StorageData {
+  settings?: StorageSettings;
+  storage?: {
+    used: number;
+    total: number;
+    messages: number;
+    media: number;
+    cache: number;
+    totalUsed: number;
+    photos: number;
+    videos: number;
+    audio: number;
+  };
+}
+
 export default function StorageSettings() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -17,7 +38,7 @@ export default function StorageSettings() {
   const [autoDownloadVideos, setAutoDownloadVideos] = useState(false);
   const [autoDownloadAudio, setAutoDownloadAudio] = useState(true);
 
-  const { data: storageData } = useQuery({
+  const { data: storageData } = useQuery<StorageData>({
     queryKey: ["/api/user/storage"],
     enabled: !!localStorage.getItem("token"),
   });
