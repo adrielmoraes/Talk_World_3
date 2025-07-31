@@ -38,8 +38,12 @@ LANGUAGE_MAP = {
     "de": "de",
     "it": "it",
     "pt": "pt",
+    "pt-br": "pt",  # Brazilian Portuguese
+    "pt-pt": "pt",  # European Portuguese
     "ru": "ru",
     "zh": "zh",
+    "zh-cn": "zh",  # Simplified Chinese
+    "zh-tw": "zh",  # Traditional Chinese
     "ja": "ja",
     "ko": "ko",
     "ar": "ar",
@@ -94,7 +98,7 @@ def load_model():
         model = model.to(device)
         model.eval()  # Set to evaluation mode
         
-        print(f"[SUCCESS] M2M100 model loaded successfully on {device}!")
+        print(f"[OK] M2M100 model loaded successfully on {device}!")
         return True
         
     except Exception as e:
@@ -102,25 +106,46 @@ def load_model():
         return False
 
 def detect_language(text):
-    """Detect language of input text"""
+    """Detect language using langdetect and map to M2M100 supported languages"""
     try:
+        logger.info(f"Detecting language for text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
         detected = detect(text)
-        # Map to M2M100 supported languages
-        return LANGUAGE_MAP.get(detected, "en")
-    except:
-        return "en"  # Default to English
+        logger.info(f"Langdetect result: {detected}")
+        
+        # Map to M2M100 supported language
+        if detected in LANGUAGE_MAP:
+            mapped_lang = LANGUAGE_MAP[detected]
+            logger.info(f"Mapped {detected} to {mapped_lang}")
+            return mapped_lang
+        
+        # Check if already in M2M100 format
+        if detected in LANGUAGE_MAP.values():
+            logger.info(f"Language {detected} already in M2M100 format")
+            return detected
+            
+        logger.warning(f"Language {detected} not supported, defaulting to English")
+        return "en"
+    except Exception as e:
+        logger.error(f"Language detection failed: {str(e)}")
+        return "en"  # Default to English if detection fails
 
 def translate_text(text, source_lang, target_lang):
     """Translate text using M2M100"""
     if not model or not tokenizer:
         raise Exception("Model not loaded")
     
+    logger.info(f"Translating text: '{text[:100]}{'...' if len(text) > 100 else ''}'")
+    logger.info(f"Source language: {source_lang}, Target language: {target_lang}")
+    
     if source_lang == target_lang:
+        logger.info("Source and target languages are the same, returning original text")
         return text
     
     try:
         # Set source language
         tokenizer.src_lang = source_lang
+        
+        logger.info(f"Input encoded, generating translation...")
         
         # Encode text
         encoded = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
@@ -138,11 +163,29 @@ def translate_text(text, source_lang, target_lang):
         
         # Decode translation
         translation = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
+        
+        logger.info(f"Translation completed: '{translation[:100]}{'...' if len(translation) > 100 else ''}'")
+        
         return translation.strip()
         
     except Exception as e:
         logger.error(f"Translation error: {e}")
+        logger.error(f"Returning error due to translation failure")
         raise e
+
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({
+        "service": "M2M100 Translation Server",
+        "status": "running",
+        "version": "1.0.0",
+        "endpoints": {
+            "/health": "Health check",
+            "/api/translate": "Text translation",
+            "/api/detect": "Language detection",
+            "/api/languages": "List supported languages"
+        }
+    })
 
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -152,6 +195,11 @@ def health_check():
         "model_loaded": model is not None,
         "device": device
     })
+
+@app.route("/favicon.ico", methods=["GET"])
+def favicon():
+    # Return a simple response for favicon requests
+    return "", 204
 
 @app.route("/api/translate", methods=["POST"])
 def translate():
@@ -205,9 +253,12 @@ def detect_lang():
         text = data["text"]
         detected_lang = detect_language(text)
         
+        # Return both formats for compatibility
         return jsonify({
             "text": text,
-            "detected_language": detected_lang
+            "language": detected_lang,  # Expected by TypeScript code
+            "detected_language": detected_lang,  # Legacy format
+            "confidence": 0.8  # Add confidence score
         })
         
     except Exception as e:

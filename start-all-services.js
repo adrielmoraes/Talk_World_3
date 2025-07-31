@@ -5,9 +5,9 @@
  * Verifica dependências Python e inicia os serviços
  */
 
-const { spawn, exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { spawn, exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
 // Cores para output
 const colors = {
@@ -33,8 +33,20 @@ function checkPythonDependencies() {
       if (error) {
         log('❌ Dependências Python não encontradas. Instalando...', 'yellow');
         
-        // Instalar dependências
-        const installProcess = spawn('pip', ['install', '-r', 'voice-requirements.txt'], {
+        // Instalar dependências específicas do Coqui TTS
+        const packages = [
+          'TTS==0.22.0',
+          'openai-whisper',
+          'torch>=2.0.0',
+          'torchvision',
+          'torchaudio',
+          'transformers>=4.20.0',
+          'sentencepiece',
+          'flask>=2.3.0',
+          'flask-cors>=4.0.0'
+        ];
+        
+        const installProcess = spawn('pip', ['install', ...packages], {
           stdio: 'inherit',
           shell: true
         });
@@ -142,7 +154,7 @@ async function main() {
   log('🌍 Talk World - Iniciando todos os serviços...', 'bright');
   
   // Verificar se arquivos existem
-  const requiredFiles = ['whisper-stt-server.py', 'coqui-tts-server.py', 'm2m100-translation-server.py', 'voice-requirements.txt'];
+  const requiredFiles = ['whisper-stt-server.py', 'coqui-tts-server.py', 'm2m100-translation-server.py'];
   
   for (const file of requiredFiles) {
     if (!fs.existsSync(file)) {
@@ -152,14 +164,7 @@ async function main() {
     }
   }
   
-  // Verificar dependências Python
-  const depsOk = await checkPythonDependencies();
-  if (!depsOk) {
-    log('❌ Não foi possível instalar dependências Python', 'red');
-    process.exit(1);
-  }
-  
-  // Iniciar serviços
+  // Iniciar serviços diretamente
   startServices();
 }
 

@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 import { groqTranslationService } from './groq-translation';
-import FormData from 'form-data';
+import * as FormData from 'form-data';
 import fetch from 'node-fetch';
+import { Readable } from 'stream';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -197,13 +198,16 @@ class VoiceTranslationService {
       // Try local Whisper STT first
       if (WHISPER_STT_ENABLED) {
         try {
-          const formData = new FormData();
-          formData.append('audio', audioBuffer, {
+          const formData = new (FormData as any)();
+          
+          // Convert Buffer to Readable stream for form-data compatibility
+          const audioStream = Readable.from(audioBuffer);
+          formData.append('audio', audioStream, {
             filename: 'audio.wav',
             contentType: 'audio/wav'
           });
 
-          const response = await fetch(`${WHISPER_STT_SERVER_URL}/api/stt`, {
+          const response = await fetch(`${WHISPER_STT_SERVER_URL}/api/transcribe`, {
             method: 'POST',
             body: formData as any,
             headers: formData.getHeaders()

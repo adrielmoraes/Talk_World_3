@@ -87,6 +87,22 @@ def install_coqui_tts():
     """Install Coqui TTS"""
     print("\n=== Installing Coqui TTS ===")
     
+    # Install specific version of Coqui TTS that works with PyTorch 2.6+
+    packages = [
+        "TTS==0.22.0",
+        "torch>=2.0.0",
+        "torchvision",
+        "torchaudio",
+        "transformers>=4.20.0",
+        "sentencepiece"
+    ]
+    
+    for package in packages:
+        print(f"Installing {package}...")
+        result = run_command(f"pip install {package}", check=False)
+        if result.returncode != 0:
+            print(f"Warning: Failed to install {package}")
+    
     print("Coqui TTS installation completed!")
 
 def create_coqui_server():
@@ -103,11 +119,18 @@ Provides REST API for text-to-speech conversion
 import os
 import io
 import json
+import torch
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from TTS.api import TTS
+from TTS.tts.configs.xtts_config import XttsConfig
+from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
+from TTS.config.shared_configs import BaseDatasetConfig
 import tempfile
 import logging
+
+# Fix for PyTorch weights_only issue with XTTS v2
+torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -118,8 +141,22 @@ CORS(app)
 
 # Initialize TTS model
 print("Loading TTS model...")
-tts = TTS(model_name="xtts_v2.0.2")
-print("TTS model loaded successfully!")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
+
+try:
+    tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+    print("TTS model loaded successfully!")
+    
+    # Check if model has speaker capabilities
+    if hasattr(tts, 'speakers') and tts.speakers:
+        print(f"Available speakers: {len(tts.speakers)}")
+    else:
+        print("No preset speakers available - voice cloning mode only")
+except Exception as e:
+    logger.error(f"Failed to load TTS model: {e}")
+    print(f"Error details: {e}")
+    exit(1)
 
 # Language mapping for XTTS v2
 LANGUAGE_MAP = {

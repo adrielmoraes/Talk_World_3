@@ -1,0 +1,3 @@
+@echo off
+echo Iniciando servidor Coqui TTS com Python 3.11...
+py -3.11 coqui-tts-server.py

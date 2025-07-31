@@ -28,11 +28,29 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model = whisper.load_model("base", device=device)
 print(f"Whisper model loaded on {device}!")
 
-@app.route("/health", methods=["GET"])
-def health_check():
-    return jsonify({"status": "healthy", "service": "whisper-stt"})
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({
+        "service": "Whisper STT Server",
+        "status": "running",
+        "version": "1.0.0",
+        "endpoints": {
+            "/health": "Health check",
+            "/api/transcribe": "Speech-to-text transcription",
+            "/api/models": "List available models"
+        }
+    })
 
-@app.route("/api/stt", methods=["POST"])
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "healthy", "service": "Whisper STT"})
+
+@app.route("/favicon.ico", methods=["GET"])
+def favicon():
+    # Return a simple response for favicon requests
+    return "", 204
+
+@app.route("/api/transcribe", methods=["POST"])
 def speech_to_text():
     try:
         # Check if audio file is provided

@@ -5,8 +5,8 @@ import { storage } from "./storage";
 import { insertUserSchema, insertOtpSchema, insertMessageSchema, insertCallSchema, insertContactSchema } from "@shared/schema";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
-import { voiceTranslationService } from "./voice-translation";
-import { groqTranslationService } from "./groq-translation";
+import { localTranslationService } from './local-translation';
+import { localVoiceTranslationService } from './local-voice-translation';
 import AudioMessageService from "./audio-message-service";
 import multer from "multer";
 import type { FileFilterCallback } from "multer";
@@ -38,6 +38,10 @@ declare global {
   namespace Express {
     interface Request {
       userId?: number;
+      user?: {
+        id: number;
+        [key: string]: any;
+      };
     }
   }
 }
@@ -114,56 +118,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
               let finalTargetLanguage = message.targetLanguage;
               let translationFailed = false;
 
-              // Always translate if recipient has preferred language and it's different from original
+              // Always translate if recipient has preferred language and it's different from sender's language
               if (recipient?.preferredLanguage) {
                 try {
-                  // First detect the language of the original message
-                  const detectionResult = await groqTranslationService.detectLanguage(message.text);
-                  const detectedLanguage = detectionResult?.language;
+                  // Get sender's preferred language instead of detecting from message
+                  const sender = await storage.getUser(ws.userId);
+                  const senderLanguage = sender?.preferredLanguage || 'pt-BR'; // Default to Portuguese if not set
                   
-                  // Only translate if the detected language is different from recipient's preferred language
-                  if (detectedLanguage && detectedLanguage !== recipient.preferredLanguage) {
-                    // Get previous messages for context (up to 3)
-                    const previousMessages = [];
-                    try {
-                      const messages = await storage.getConversationMessages(message.conversationId);
-                      if (messages && messages.length > 0) {
-                        for (const msg of messages) {
-                          previousMessages.push({
-                            text: msg.originalText,
-                            sender: msg.senderId === ws.userId ? 'sender' : 'recipient'
-                          });
-                        }
-                      }
-                    } catch (err) {
-                      console.error('[WebSocket] Error getting previous messages for context:', err);
-                    }
-                    
-                    // Translate to recipient's preferred language with conversation context
-                    const translation = await groqTranslationService.translateWithContext({
-                      text: message.text,
-                      sourceLanguage: detectedLanguage,
-                      targetLanguage: recipient.preferredLanguage,
-                      context: {
-                        conversationId: message.conversationId,
-                        senderId: ws.userId.toString(),
-                        recipientId: recipientId.toString(),
-                        messageType: 'chat',
-                        previousMessages: previousMessages
-                      }
-                    });
+                  // Only translate if sender's language is different from recipient's preferred language
+                  if (senderLanguage && senderLanguage !== recipient.preferredLanguage) {
+                    // Translate to recipient's preferred language using local M2M100 service
+                    const translation = await localTranslationService.translateText(
+                      message.text,
+                      recipient.preferredLanguage,
+                      senderLanguage
+                    );
                     
                     if (translation && translation.translatedText) {
                       finalTranslatedText = translation.translatedText;
                       finalTargetLanguage = recipient.preferredLanguage;
-                      console.log('[WebSocket] Message translated from', detectedLanguage, 'to', recipient.preferredLanguage);
+                      console.log('[WebSocket] Message translated from', senderLanguage, 'to', recipient.preferredLanguage);
                     } else {
                       translationFailed = true;
                       finalTranslatedText = message.text; // Fallback to original text
-                      finalTargetLanguage = detectedLanguage || 'unknown';
+                      finalTargetLanguage = senderLanguage || 'unknown';
                     }
                   } else {
-                    console.log('[WebSocket] Translation skipped - same language detected:', detectedLanguage);
+                    console.log('[WebSocket] Translation skipped - same language:', senderLanguage);
                   }
                 } catch (error) {
                   console.error('[WebSocket] Translation error:', error);
@@ -335,11 +316,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const targetLanguage = message.targetLanguage || 'en-US';
               const sequenceNumber = message.sequenceNumber || 0;
               
-              // Process audio chunk through voice translation service
-              const result = await voiceTranslationService.processAudioChunk(
+              // Process audio chunk through local voice translation service
+              const senderLanguage = message.senderLanguage || 'en';
+              const result = await localVoiceTranslationService.processAudioChunk(
                 ws.userId,
                 message.conversationId,
                 audioBuffer,
+                senderLanguage,
                 targetLanguage,
                 sequenceNumber
               );
@@ -617,7 +600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } else if (message.type === 'call_cleanup') {
           // Handle call cleanup for voice translation
           if (ws.userId && message.conversationId) {
-            voiceTranslationService.cleanupConversation(ws.userId, message.conversationId);
+            localVoiceTranslationService.clearPendingChunks(ws.userId, message.conversationId);
           }
         } else if (message.type === 'get_user_status') {
           // Handle user status request
@@ -1200,11 +1183,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Conversation ID is required' });
       }
 
-      // Process audio chunk with voice translation service
-      const result = await voiceTranslationService.processAudioChunk(
+      // Process audio chunk with local voice translation service
+      const senderLanguage = req.body.senderLanguage || 'en';
+      const result = await localVoiceTranslationService.processAudioChunk(
         req.userId,
         parseInt(conversationId),
         req.file.buffer,
+        senderLanguage,
         targetLanguage
       );
 
@@ -1246,8 +1231,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Text is required' });
       }
 
-      // Generate speech using voice translation service
-      const audioBuffer = await voiceTranslationService.generateSpeech(text, language);
+      // Generate speech using local TTS service
+      const audioBuffer = await localTranslationService.synthesizeSpeech(text, language);
 
       if (!audioBuffer) {
         return res.status(500).json({ message: 'Failed to generate speech' });
@@ -1270,7 +1255,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get supported languages
   app.get('/api/translation/languages', (req, res) => {
     try {
-      const languages = groqTranslationService.getSupportedLanguages();
+      // Return supported languages for local M2M100 translation
+      const languages = [
+        { code: 'pt', name: 'Português' },
+        { code: 'en', name: 'English' },
+        { code: 'es', name: 'Español' },
+        { code: 'fr', name: 'Français' },
+        { code: 'de', name: 'Deutsch' },
+        { code: 'it', name: 'Italiano' },
+        { code: 'ja', name: '日本語' },
+        { code: 'ko', name: '한국어' },
+        { code: 'zh', name: '中文' },
+        { code: 'ar', name: 'العربية' },
+        { code: 'ru', name: 'Русский' },
+        { code: 'hi', name: 'हिन्दी' },
+        { code: 'tr', name: 'Türkçe' },
+        { code: 'nl', name: 'Nederlands' }
+      ];
       res.json({ languages });
     } catch (error) {
       console.error('Get languages error:', error);
@@ -1278,22 +1279,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Detect language of text
+  // Get user's preferred language instead of detecting from text
   app.post('/api/translation/detect', authenticateToken, async (req, res) => {
     try {
-      const { text } = req.body;
-
-      if (!text) {
-        return res.status(400).json({ message: 'Text is required' });
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated' });
       }
 
-      const detection = await groqTranslationService.detectLanguage(text);
+      // Get user's preferred language from profile
+      const user = await storage.getUser(userId);
+      const userLanguage = user?.preferredLanguage || 'pt-BR'; // Default to Portuguese
+      
+      const detection = {
+        language: userLanguage,
+        confidence: 1.0 // High confidence since it's user-defined
+      };
+      
       res.json({ detection });
-    } catch (error) {
-      console.error('Language detection error:', error);
-      res.status(500).json({ message: 'Failed to detect language' });
-    }
-  });
+     } catch (error) {
+       console.error('Language detection error:', error);
+       res.status(500).json({ message: 'Failed to get user language' });
+     }
+   });
 
   // Translate text
   app.post('/api/translation/translate', authenticateToken, async (req, res) => {
@@ -1304,21 +1313,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Text and target language are required' });
       }
 
-      let translation;
-      if (context) {
-        translation = await groqTranslationService.translateWithContext({
-          text, 
-          targetLanguage, 
-          sourceLanguage,
-          context
-        });
-      } else {
-        translation = await groqTranslationService.translateText(
-          text, 
-          targetLanguage, 
-          sourceLanguage
-        );
-      }
+      // Use local translation service (context is not supported in M2M100)
+      const translation = await localTranslationService.translateText(
+        text, 
+        targetLanguage, 
+        sourceLanguage
+      );
 
       res.json({ translation });
     } catch (error) {
@@ -1340,11 +1340,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Maximum 50 texts per batch request' });
       }
 
-      const translations = await groqTranslationService.translateBatch(
-        texts, 
-        targetLanguage, 
-        sourceLanguage
-      );
+      // Translate each text individually with local service
+      const translations = [];
+      for (const text of texts) {
+        const translation = await localTranslationService.translateText(
+          text,
+          targetLanguage,
+          sourceLanguage
+        );
+        translations.push(translation);
+      }
 
       res.json({ translations });
     } catch (error) {

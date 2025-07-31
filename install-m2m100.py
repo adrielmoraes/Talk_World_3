@@ -18,9 +18,9 @@ def check_python_version():
     """Check if Python version is compatible"""
     version = sys.version_info
     if version.major < 3 or (version.major == 3 and version.minor < 8):
-        print("❌ Python 3.8+ is required")
+        print("[ERROR] Python 3.8+ is required")
         sys.exit(1)
-    print(f"✅ Python {version.major}.{version.minor}.{version.micro} detected")
+    print(f"[OK] Python {version.major}.{version.minor}.{version.micro} detected")
 
 def install_packages():
     """Install required packages for M2M100 translation"""

@@ -62,16 +62,12 @@ export function useTranslation() {
     }
   }, []);
 
-  // Detect language
+  // Get user's preferred language
   const detectLanguage = useCallback(async (
-    text: string
+    text?: string // Optional parameter for backward compatibility
   ): Promise<LanguageDetectionResult | null> => {
-    if (!text.trim()) return null;
-
     try {
-      const response = await apiRequest('POST', '/api/translation/detect', {
-        text: text.trim(),
-      });
+      const response = await apiRequest('POST', '/api/translation/detect', {});
 
       const result = await response.json();
       return result.detection;
@@ -116,12 +112,12 @@ export function useTranslation() {
     targetLanguage: string,
     context?: string
   ): Promise<TranslationResult | null> => {
-    // First detect the language
-    const detection = await detectLanguage(text);
+    // Get user's preferred language
+    const detection = await detectLanguage();
     
     if (!detection) return null;
 
-    // Skip translation if already in target language
+    // Skip translation if user's language is same as target language
     if (detection.language === targetLanguage) {
       return {
         originalText: text,
@@ -132,7 +128,7 @@ export function useTranslation() {
       };
     }
 
-    // Translate if different language
+    // Translate from user's language to target language
     return translateText(text, targetLanguage, detection.language, context);
   }, [detectLanguage, translateText]);
 

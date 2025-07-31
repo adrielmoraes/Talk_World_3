@@ -1,6 +1,5 @@
-
-# Voice Services Requirements - Updated for Talk World 3.0
-# Compatible with PyTorch 2.6+ and includes serialization fixes
+# Talk World 3.0 - Python Dependencies
+# Updated requirements with correct Coqui TTS version and PyTorch compatibility
 
 # Core TTS and STT
 TTS==0.22.0
@@ -26,6 +25,12 @@ scipy>=1.10.0
 flask>=2.3.0
 flask-cors>=4.0.0
 
+# Translation models
+torch-audio>=0.13.0
+sacremoses>=0.0.53
+fairseq>=0.12.2
+
 # Utilities
 requests>=2.28.0
 tqdm>=4.64.0
+Pillow>=9.0.0
